@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
-import { dealAPI, paymentsAPI, ownersAPI, investorsAPI } from '../../lib/api';
+import { dealAPI, paymentsAPI } from '../../lib/api';
 import { getUser, getToken } from '../../lib/auth';
 import { hasPermission, PERMISSIONS } from '../../lib/permissions';
 import toast from 'react-hot-toast';
@@ -14,7 +14,6 @@ import {
 } from 'chart.js';
 import { Pie } from 'react-chartjs-2';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 // Register Chart.js components
 ChartJS.register(ArcElement, Tooltip, Legend, Title);
@@ -33,84 +32,18 @@ export default function ViewDeal() {
   const [investors, setInvestors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState('project');
+  const [activeSection, setActiveSection] = useState('');
   const [purchaseAmount, setPurchaseAmount] = useState('');
   const [purchaseAmountLoading, setPurchaseAmountLoading] = useState(false);
   const [soldPrice, setSoldPrice] = useState('');
   const [sellingAmountLoading, setSellingAmountLoading] = useState(false);
   
-  // Investor shares state for percentage tracking
+  // State for percentage tracking
   const [investorShares, setInvestorShares] = useState({});
   const [ownerShares, setOwnerShares] = useState({});
-
-  // Handler for investor percentage changes
-  const handleInvestorPercentageChange = useCallback((investorId, value) => {
-    // Allow empty input and whole numbers only (no decimal points)
-    if (value !== '' && !/^\d*$/.test(value)) {
-      return; // Don't update if not a whole number
-    }
-    
-    // Validate range
-    const numValue = parseFloat(value);
-    if (value !== '' && (isNaN(numValue) || numValue < 0 || numValue > 100)) {
-      return; // Don't update if invalid
-    }
-    
-    setInvestorShares(prev => ({
-      ...prev,
-      [investorId]: value
-    }));
-  }, []);
-
-  // Handler for owner percentage changes
-  const handleOwnerPercentageChange = useCallback((ownerId, value) => {
-    // Allow empty input and whole numbers only (no decimal points)
-    if (value !== '' && !/^\d*$/.test(value)) {
-      return; // Don't update if not a whole number
-    }
-    
-    // Validate range
-    const numValue = parseFloat(value);
-    if (value !== '' && (isNaN(numValue) || numValue < 0 || numValue > 100)) {
-      return; // Don't update if invalid
-    }
-    
-    setOwnerShares(prev => ({
-      ...prev,
-      [ownerId]: value
-    }));
-  }, []);
-
-  // Function to calculate investor investment amounts using ID-based tracking
-  const calculateInvestorAmounts = useCallback((investorsList, paymentsList) => {
-    if (!investorsList || !paymentsList || investorsList.length === 0 || paymentsList.length === 0) {
-      return investorsList;
-    }
-
-    return investorsList.map(investor => {
-      // Calculate total amount invested by this investor using ID
-      const investorPayments = paymentsList.filter(payment => {
-        // Try ID-based matching first (new system)
-        if (payment.paid_by_id && investor.id) {
-          return payment.paid_by_id === investor.id && payment.status === 'completed';
-        }
-        // Fallback to name-based matching (backward compatibility)
-        const investorName = investor.investor_name || investor.name;
-        return payment.paid_by === investorName && payment.status === 'completed';
-      });
-      
-      const calculatedAmount = investorPayments.reduce((total, payment) => {
-        const amount = parseFloat(payment.amount) || 0;
-        return total + amount;
-      }, 0);
-
-      return {
-        ...investor,
-        calculated_investment_amount: calculatedAmount,
-        payment_count: investorPayments.length
-      };
-    });
-  }, []);
+  
+  // State for P&L Analysis
+  const [selectedInvestorId, setSelectedInvestorId] = useState('all');
 
   const fetchPayments = useCallback(async () => {
     if (!id) return;
@@ -122,7 +55,7 @@ export default function ViewDeal() {
           setPayments(trackingResponse.data.payments);
           return;
         }
-      } catch (_trackingError) {
+      } catch {
         console.log('Payment tracking endpoint not available, falling back to regular payments');
       }
       
@@ -160,18 +93,135 @@ export default function ViewDeal() {
         mergedDeal.investors = data.investors || mergedDeal.investors || [];
       }
 
+      // Fetch payments immediately to calculate investment amounts
+      let paymentsData = [];
+      let paymentTrackingData = null;
+      
+      // Try to get payment tracking data first (preferred method)
+      try {
+        const trackingResponse = await paymentsAPI.getPaymentTrackingData(id);
+        paymentTrackingData = trackingResponse.data;
+        console.log('=== PAYMENT TRACKING DATA RECEIVED ===', paymentTrackingData);
+      } catch {
+        console.log('Payment tracking endpoint not available, will use manual calculation');
+      }
+
+      // Also get raw payments for fallback calculation
+      try {
+        const paymentsResponse = await paymentsAPI.list(id);
+        paymentsData = paymentsResponse.data || [];
+        setPayments(paymentsData);
+      } catch (error) {
+        console.error('Failed to fetch payments:', error);
+        setPayments([]);
+      }
+
+      // Calculate investment amounts using payment tracking data or fallback to manual calculation
+      console.log('=== INITIAL CALCULATION ON PAGE LOAD ===');
+      console.log('Merged deal investors:', mergedDeal.investors?.length || 0);
+      console.log('Payment tracking data available:', !!paymentTrackingData);
+      console.log('Payments data:', paymentsData?.length || 0);
+      
+      let investorsWithAmounts = [];
+      
+      if (paymentTrackingData && paymentTrackingData.investors) {
+        // Use backend calculated amounts (preferred method)
+        console.log('Using payment tracking data for calculations');
+        investorsWithAmounts = (mergedDeal.investors || []).map(investor => {
+          const trackingInvestor = paymentTrackingData.investors.find(
+            ti => ti.investor_id === investor.id || ti.investor_name === (investor.investor_name || investor.name)
+          );
+          
+          if (trackingInvestor) {
+            console.log(`Found tracking data for ${investor.investor_name || investor.name}:`, {
+              total_paid: trackingInvestor.total_paid,
+              investment_amount: trackingInvestor.investment_amount
+            });
+            
+            return {
+              ...investor,
+              calculated_investment_amount: trackingInvestor.total_paid || 0,
+              payment_count: trackingInvestor.owner_breakdown?.reduce((count, breakdown) => count + breakdown.payments.length, 0) || 0
+            };
+          } else {
+            console.log(`No tracking data found for ${investor.investor_name || investor.name}`);
+            return {
+              ...investor,
+              calculated_investment_amount: 0,
+              payment_count: 0
+            };
+          }
+        });
+      } else {
+        // Fallback to manual calculation
+        console.log('Using manual calculation method');
+        investorsWithAmounts = (mergedDeal.investors || []).map(investor => {
+          console.log(`\n--- Processing investor on load: ${investor.investor_name || investor.name} (ID: ${investor.id}) ---`);
+          
+          const investorPayments = paymentsData.filter(payment => {
+            console.log(`Checking payment on load:`, {
+              payment_id: payment.id,
+              amount: payment.amount,
+              status: payment.status?.toLowerCase(),
+              paid_by_id: payment.paid_by_id,
+              paid_by_name: payment.paid_by_name || payment.paid_by,
+              payment_type: payment.payment_type
+            });
+            
+            // Try ID-based matching first (new system)
+            if (payment.paid_by_id && investor.id) {
+              const statusCheck = payment.status && (
+                payment.status.toLowerCase() === 'completed' || 
+                payment.status.toLowerCase() === 'success' ||
+                payment.status.toLowerCase() === 'paid'
+              );
+              const idMatch = payment.paid_by_id === investor.id && statusCheck;
+              console.log(`Load ID match: ${idMatch} (payment.paid_by_id: ${payment.paid_by_id} === investor.id: ${investor.id}, status: ${payment.status}, statusCheck: ${statusCheck})`);
+              return idMatch;
+            }
+            // Fallback to name-based matching (backward compatibility)
+            const investorName = investor.investor_name || investor.name;
+            const paidByName = payment.paid_by_name || payment.paid_by;
+            const statusCheck = payment.status && (
+              payment.status.toLowerCase() === 'completed' || 
+              payment.status.toLowerCase() === 'success' ||
+              payment.status.toLowerCase() === 'paid'
+            );
+            const nameMatch = paidByName === investorName && statusCheck;
+            console.log(`Load Name match: ${nameMatch} (payment name: "${paidByName}" === investor name: "${investorName}", status: ${payment.status}, statusCheck: ${statusCheck})`);
+            return nameMatch;
+          });
+          
+          console.log(`Found ${investorPayments.length} matching payments on load for investor ${investor.investor_name || investor.name}`);
+          
+          const calculatedAmount = investorPayments.reduce((total, payment) => {
+            const amount = parseFloat(payment.amount) || 0;
+            console.log(`Adding payment amount on load: ${amount}`);
+            return total + amount;
+          }, 0);
+
+          console.log(`Total calculated amount on load: ${calculatedAmount}`);
+
+          return {
+            ...investor,
+            calculated_investment_amount: calculatedAmount,
+            payment_count: investorPayments.length
+          };
+        });
+      }
+
       setDeal(mergedDeal);
       
       setPurchaseAmount(mergedDeal.purchase_amount || '');
       setSoldPrice(mergedDeal.sold_price || '');
 
-      // Set deal-specific owners and investors
+      // Set deal-specific owners and investors with calculated amounts
       setOwners(mergedDeal.owners || []);
-      setInvestors(mergedDeal.investors || []);
+      setInvestors(investorsWithAmounts);
 
       // Initialize investor shares state from existing data
       const initialInvestorShares = {};
-      (mergedDeal.investors || []).forEach(investor => {
+      investorsWithAmounts.forEach(investor => {
         if (investor.id) {
           // Use percentage_share to match the buying section logic
           initialInvestorShares[investor.id] = investor.percentage_share || '';
@@ -195,15 +245,13 @@ export default function ViewDeal() {
         setDocuments(mergedDeal.documents || []);
       }
 
-      fetchPayments();
-
     } catch (error) {
       console.error('Failed to fetch deal:', error);
       toast.error('Failed to load deal details');
     } finally {
       setLoading(false);
     }
-  }, [id, fetchPayments]);
+  }, [id]);
 
   const updatePurchaseAmount = useCallback(async (newAmount) => {
     if (!id) return;
@@ -282,23 +330,34 @@ export default function ViewDeal() {
           console.log(`Checking payment:`, {
             payment_id: payment.id,
             amount: payment.amount,
-            status: payment.status,
+            status: payment.status?.toLowerCase(),
             paid_by_id: payment.paid_by_id,
             paid_by_name: payment.paid_by_name || payment.paid_by,
+            payment_type: payment.payment_type,
             receiver_id: payment.receiver_id
           });
           
           // Try ID-based matching first (new system)
           if (payment.paid_by_id && investor.id) {
-            const idMatch = payment.paid_by_id === investor.id && payment.status && payment.status.toLowerCase() === 'completed';
-            console.log(`ID match: ${idMatch} (payment.paid_by_id: ${payment.paid_by_id} === investor.id: ${investor.id}, status: ${payment.status})`);
+            const statusCheck = payment.status && (
+              payment.status.toLowerCase() === 'completed' || 
+              payment.status.toLowerCase() === 'success' ||
+              payment.status.toLowerCase() === 'paid'
+            );
+            const idMatch = payment.paid_by_id === investor.id && statusCheck;
+            console.log(`ID match: ${idMatch} (payment.paid_by_id: ${payment.paid_by_id} === investor.id: ${investor.id}, status: ${payment.status}, statusCheck: ${statusCheck})`);
             return idMatch;
           }
           // Fallback to name-based matching (backward compatibility)
           const investorName = investor.investor_name || investor.name;
           const paidByName = payment.paid_by_name || payment.paid_by;
-          const nameMatch = paidByName === investorName && payment.status && payment.status.toLowerCase() === 'completed';
-          console.log(`Name match: ${nameMatch} (payment name: "${paidByName}" === investor name: "${investorName}", status: ${payment.status})`);
+          const statusCheck = payment.status && (
+            payment.status.toLowerCase() === 'completed' || 
+            payment.status.toLowerCase() === 'success' ||
+            payment.status.toLowerCase() === 'paid'
+          );
+          const nameMatch = paidByName === investorName && statusCheck;
+          console.log(`Name match: ${nameMatch} (payment name: "${paidByName}" === investor name: "${investorName}", status: ${payment.status}, statusCheck: ${statusCheck})`);
           return nameMatch;
         });
         
@@ -336,17 +395,21 @@ export default function ViewDeal() {
     }
   }, [investors, payments]);
 
-  // Recalculate investor amounts when payments change
+  // Recalculate investor amounts when payments change (for updates after initial load)
   useEffect(() => {
-    updateInvestorAmounts();
-  }, [payments, updateInvestorAmounts]);
-
-  // Also recalculate when both investors and payments are loaded for the first time
-  useEffect(() => {
-    if (investors && investors.length > 0 && payments && payments.length > 0) {
+    console.log('=== INVESTMENT CALCULATION useEffect TRIGGERED ===');
+    console.log('Investors:', investors?.length || 0);
+    console.log('Payments:', payments?.length || 0);
+    console.log('Loading:', loading);
+    
+    // Only run this if we already have data loaded (not on initial load)
+    if (investors && investors.length > 0 && payments && payments.length > 0 && !loading) {
+      console.log('All conditions met, calling updateInvestorAmounts');
       updateInvestorAmounts();
+    } else {
+      console.log('Conditions not met for investment calculation');
     }
-  }, [investors.length, payments.length, updateInvestorAmounts]);
+  }, [investors, payments, updateInvestorAmounts, loading]);
 
   useEffect(() => {
     setUser(getUser());
@@ -354,22 +417,45 @@ export default function ViewDeal() {
       fetchDeal();
     }
   }, [id, fetchDeal]);
-
-  // Handle section query parameter for navigation from add-payment page
   useEffect(() => {
     if (router.query.section) {
       setActiveSection(router.query.section);
-      // Clean up the URL to remove the section parameter
-      router.replace(`/deals/${id}`, undefined, { shallow: true });
     }
   }, [router.query.section, id]);
+
+  // Function to handle section change with URL update
+  const handleSectionChange = useCallback((sectionId) => {
+    setActiveSection(sectionId);
+    router.push(`/deals/${id}?section=${sectionId}`, undefined, { shallow: true });
+  }, [router, id]);
+
+  // Initialize section from URL on component mount
+  useEffect(() => {
+    if (router.isReady && id) {
+      const urlSection = router.query.section;
+      if (urlSection && ['project', 'land', 'payments', 'selling', 'profitloss'].includes(urlSection)) {
+        setActiveSection(urlSection);
+      } else if (!urlSection) {
+        // Set default section and update URL
+        router.replace(`/deals/${id}?section=project`, undefined, { shallow: true });
+      }
+    }
+  }, [router.isReady, router.query.section, router, id]);
 
   useEffect(() => {
     const handler = () => {
       if (id) fetchDeal();
     };
     const paymentsHandler = () => {
-      if (id) fetchPayments();
+      if (id) {
+        // When payments are updated externally, refetch payments and recalculate amounts
+        fetchPayments().then(() => {
+          // Trigger recalculation after payments are updated
+          if (investors && investors.length > 0) {
+            updateInvestorAmounts();
+          }
+        });
+      }
     };
     window.addEventListener('docsChanged', handler);
     window.addEventListener('paymentsChanged', paymentsHandler);
@@ -377,50 +463,19 @@ export default function ViewDeal() {
       window.removeEventListener('docsChanged', handler);
       window.removeEventListener('paymentsChanged', paymentsHandler);
     };
-  }, [id, fetchDeal, fetchPayments]);
+  }, [id, fetchDeal, fetchPayments, updateInvestorAmounts, investors]);
 
-  const categorizeDocuments = () => {
-    const categories = {
-      land: [],
-      general: []
-    };
-
-    documents.forEach(doc => {
-      const docType = doc.document_type || '';
-
-      if (['extract', 'property_card', 'survey_map', 'demarcation_certificate', 'development_plan', 'encumbrance_certificate'].includes(docType)) {
-        categories.land.push(doc);
-        return;
-      }
-
-      categories.general.push(doc);
-    });
-
-    return categories;
+  // Extract documents - only keep 7/12 extract and additional docs
+  const getExtractDocuments = () => {
+    return documents.filter(doc => doc.document_type === 'extract');
   };
 
-  const getDocumentDisplayName = (docType) => {
-    const displayNames = {
-      extract: '7/12 Extract',
-      property_card: 'Property Card',
-      survey_map: 'Survey Map',
-      demarcation_certificate: 'Demarcation Certificate',
-      development_plan: 'Development Plan',
-      encumbrance_certificate: 'Encumbrance Certificate',
-      identity_proof: 'Identity Proof',
-      address_proof: 'Address Proof',
-      bank_details: 'Bank Details',
-      power_of_attorney: 'Power of Attorney',
-      past_sale_deeds: 'Past Sale Deeds',
-      noc_co_owners: 'NOC from Co-owners',
-      noc_society: 'NOC from Society',
-      affidavit_no_dispute: 'Affidavit - No Legal Dispute',
-      investment_agreement: 'Investment Agreement',
-      financial_proof: 'Financial Proof',
-      partnership_agreement: 'Partnership Agreement',
-      loan_agreement: 'Loan Agreement'
-    };
-    return displayNames[docType] || docType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const getAdditionalDocuments = () => {
+    return documents.filter(doc => 
+      doc.document_type && 
+      doc.document_type !== 'extract' && 
+      doc.document_type !== 'payment_proof'
+    );
   };
 
   if (loading) {
@@ -454,12 +509,16 @@ export default function ViewDeal() {
     );
   }
 
-  const categorizedDocs = categorizeDocuments();
+  // Get filtered documents for our simplified document system
+  const extractDocuments = getExtractDocuments();
+  const additionalDocuments = getAdditionalDocuments();
+  
   const sections = [
     { id: 'project', name: 'PROJECT DETAILS' },
     { id: 'land', name: 'BUYING' },
     { id: 'payments', name: 'PAYMENTS' },
-    { id: 'selling', name: 'SELLING' }
+    { id: 'selling', name: 'SELLING' },
+    { id: 'profitloss', name: 'PROFIT & LOSS' }
   ];
 
   return (
@@ -661,7 +720,7 @@ export default function ViewDeal() {
               {sections.map((section) => (
                 <button
                   key={section.id}
-                  onClick={() => setActiveSection(section.id)}
+                  onClick={() => handleSectionChange(section.id)}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${
                     activeSection === section.id
                       ? 'border-slate-900 text-slate-900'
@@ -678,19 +737,18 @@ export default function ViewDeal() {
         {/* Content */}
         <div className="px-6 py-8">
           {activeSection === 'project' && (
-            <ProjectDetailsSection deal={deal} owners={owners} investors={investors} loading={loading} />
+            <ProjectDetailsSection deal={deal} owners={owners} investors={investors} loading={loading} payments={payments} />
           )}
           
           {activeSection === 'land' && (
             <LandDocumentsSection 
-              documents={categorizedDocs.land} 
-              generalDocuments={categorizedDocs.general}
+              documents={extractDocuments} 
+              generalDocuments={additionalDocuments}
               purchaseAmount={deal.purchase_amount}
               onPurchaseAmountChange={updatePurchaseAmount}
               purchaseAmountLoading={purchaseAmountLoading}
               owners={owners}
               investors={investors}
-              deal={deal}
             />
           )}
           
@@ -715,6 +773,16 @@ export default function ViewDeal() {
               onUpdate={fetchDeal}
             />
           )}
+          
+          {activeSection === 'profitloss' && (
+            <ProfitLossSection 
+              deal={deal}
+              payments={payments}
+              investors={investors}
+              selectedInvestorId={selectedInvestorId}
+              setSelectedInvestorId={setSelectedInvestorId}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -722,7 +790,30 @@ export default function ViewDeal() {
 }
 
 // Project Details Section Component
-function ProjectDetailsSection({ deal, owners, investors, loading }) {
+function ProjectDetailsSection({ deal, owners, investors, loading, payments = [] }) {
+  
+  console.log('=== ProjectDetailsSection DEBUG ===');
+  console.log('Payments received:', payments);
+  console.log('Investors received:', investors);
+  console.log('Loading state:', loading);
+  
+  // Additional debugging for payment structure
+  if (payments && payments.length > 0) {
+    console.log('Sample payment structure:', payments[0]);
+    payments.forEach((payment, index) => {
+      console.log(`Payment ${index + 1}:`, {
+        id: payment.id,
+        amount: payment.amount,
+        status: payment.status,
+        paid_by: payment.paid_by,
+        paid_by_id: payment.paid_by_id,
+        paid_by_name: payment.paid_by_name,
+        payment_type: payment.payment_type
+      });
+    });
+  }
+  
+  // Format amount for display
   const formatAmount = (amount) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -730,6 +821,89 @@ function ProjectDetailsSection({ deal, owners, investors, loading }) {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
+  };
+
+  // Calculate total invested amount for an investor based on completed payments
+  const calculateInvestorAmount = (investor, payments) => {
+    if (!payments || !investor) return { amount: 0, count: 0 };
+    
+    const investorId = investor.id?.toString();
+    const investorName = investor.investor_name || investor.name;
+    
+    console.log(`\n=== Calculating for investor: ${investorName} (ID: ${investorId}) ===`);
+    console.log('Total payments to check:', payments.length);
+    
+    // Use robust matching logic similar to PaymentsSection and other components
+    const investorPayments = payments.filter(payment => {
+      const paymentStatus = payment.status === 'completed' || payment.status === 'success';
+      if (!paymentStatus) {
+        console.log(`Payment ${payment.id} skipped - status: ${payment.status}`);
+        return false;
+      }
+      
+      console.log(`Checking payment ${payment.id}:`, {
+        paid_by_id: payment.paid_by_id,
+        paid_by: payment.paid_by,
+        paid_by_name: payment.paid_by_name,
+        amount: payment.amount,
+        status: payment.status
+      });
+      
+      // Primary ID-based matching (most reliable)
+      if (payment.paid_by_id?.toString() === investorId) {
+        console.log(`✓ Matched on paid_by_id: ${payment.paid_by_id} === ${investorId}`);
+        return true;
+      }
+      
+      // Secondary ID matching (legacy field) - direct comparison
+      if (payment.paid_by?.toString() === investorId) {
+        console.log(`✓ Matched on paid_by: ${payment.paid_by} === ${investorId}`);
+        return true;
+      }
+      
+      // Parse "investor_ID" format from paid_by field
+      if (payment.paid_by && typeof payment.paid_by === 'string' && payment.paid_by.includes('_')) {
+        const [type, id] = payment.paid_by.split('_');
+        if (type === 'investor' && id === investorId) {
+          console.log(`✓ Matched on parsed paid_by: "${payment.paid_by}" -> investor ID ${id} === ${investorId}`);
+          return true;
+        }
+      }
+      
+      // Exact name matching
+      if (payment.paid_by_name === investorName) {
+        console.log(`✓ Matched on exact paid_by_name: "${payment.paid_by_name}" === "${investorName}"`);
+        return true;
+      }
+      
+      // Flexible name matching (case insensitive, trim whitespace)
+      const paymentName = (payment.paid_by_name || '').toLowerCase().trim();
+      const investorNameLower = (investorName || '').toLowerCase().trim();
+      
+      if (paymentName && investorNameLower && paymentName === investorNameLower) {
+        console.log(`✓ Matched on normalized names: "${paymentName}" === "${investorNameLower}"`);
+        return true;
+      }
+      
+      // Partial name matching
+      if (paymentName && investorNameLower && 
+          (paymentName.includes(investorNameLower) || investorNameLower.includes(paymentName))) {
+        console.log(`✓ Matched on partial names: "${paymentName}" includes "${investorNameLower}"`);
+        return true;
+      }
+      
+      console.log(`✗ No match found for payment ${payment.id}`);
+      return false;
+    });
+
+    const totalAmount = investorPayments.reduce((sum, payment) => {
+      const amount = parseFloat(payment.amount) || 0;
+      console.log(`Adding payment ${payment.id}: ₹${amount}`);
+      return sum + amount;
+    }, 0);
+    
+    console.log(`Total for ${investorName}: ₹${totalAmount} from ${investorPayments.length} payments`);
+    return { amount: totalAmount, count: investorPayments.length };
   };
 
   if (loading) {
@@ -830,15 +1004,16 @@ function ProjectDetailsSection({ deal, owners, investors, loading }) {
                     {investor.percentage_share && (
                       <InfoItem label="Investment Percentage" value={`${Math.round(investor.percentage_share)}%`} />
                     )}
-                    {investor.calculated_investment_amount !== undefined && (
-                      <InfoItem 
-                        label="Total Invested" 
-                        value={investor.calculated_investment_amount > 0 
-                          ? `${formatAmount(investor.calculated_investment_amount)} (${investor.payment_count || 0} payments)`
-                          : 'No payments recorded'
-                        } 
-                      />
-                    )}
+                    <InfoItem 
+                      label="Total Invested" 
+                      value={(() => {
+                        const investment = calculateInvestorAmount(investor, payments);
+                        
+                        return investment.amount > 0 
+                          ? `${formatAmount(investment.amount)} (${investment.count} installments)`
+                          : `No completed payments`;
+                      })()}
+                    />
                   </div>
                 </div>
               ))}
@@ -879,7 +1054,7 @@ function ProjectDetailsSection({ deal, owners, investors, loading }) {
 }
 
 // Purchasing Section Component
-function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = '', onPurchaseAmountChange, purchaseAmountLoading = false, owners = [], investors = [], deal = {} }) {
+function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = '', onPurchaseAmountChange, purchaseAmountLoading = false, owners = [], investors = [] }) {
   const router = useRouter();
   const { id } = router.query;
   const [localPurchaseAmount, setLocalPurchaseAmount] = useState(purchaseAmount);
@@ -1017,8 +1192,8 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      // Use correct backend URL
-      const backendUrl = 'http://localhost:5000';
+      // Use environment variable for backend URL
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
       const requestUrl = `${backendUrl}/api/deals/${id}/owner-shares`;
       console.log('Request URL:', requestUrl);
       console.log('Request headers (token hidden):', { ...headers, Authorization: headers.Authorization ? 'Bearer [HIDDEN]' : undefined });
@@ -1062,7 +1237,7 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
       console.error('Error stack:', error.stack);
       
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        alert('Network error: Cannot connect to backend. Check if backend is running on http://localhost:5000');
+        alert('Network error: Cannot connect to backend. Please check your backend connection.');
       } else if (error.message.includes('Authentication required')) {
         alert('Authentication required. Please log in first to save owner shares.');
       } else {
@@ -1100,8 +1275,8 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      // Use correct backend URL for investor shares
-      const backendUrl = 'http://localhost:5000';
+      // Use environment variable for backend URL
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
       const requestUrl = `${backendUrl}/api/deals/${id}/investor-shares`;
       console.log('Request URL:', requestUrl);
       console.log('Request headers (token hidden):', { ...headers, Authorization: headers.Authorization ? 'Bearer [HIDDEN]' : undefined });
@@ -1145,12 +1320,102 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
       console.error('Error stack:', error.stack);
       
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        alert('Network error: Cannot connect to backend. Check if backend is running on http://localhost:5000');
+        alert('Network error: Cannot connect to backend. Please check your backend connection.');
       } else if (error.message.includes('Authentication required')) {
         alert('Authentication required. Please log in first to save investor shares.');
       } else {
         alert(`Failed to save investor shares: ${error.message}`);
       }
+    }
+  };
+
+  // Delete owner function
+  const deleteOwner = async (ownerId) => {
+    if (!ownerId) {
+      alert('Owner ID is required');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this owner? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      // Get auth token from cookies
+      const token = getToken();
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
+      const requestUrl = `${backendUrl}/api/owners/${ownerId}`;
+
+      const response = await fetch(requestUrl, {
+        method: 'DELETE',
+        headers: headers,
+      });
+
+      if (response.ok) {
+        alert('Owner deleted successfully!');
+        // Refresh the deal data to show updated values
+        window.location.reload();
+      } else {
+        const responseData = await response.json().catch(() => ({}));
+        throw new Error(`HTTP ${response.status}: ${responseData.error || responseData.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error deleting owner:', error);
+      alert(`Failed to delete owner: ${error.message}`);
+    }
+  };
+
+  // Delete investor function
+  const deleteInvestor = async (investorId) => {
+    if (!investorId) {
+      alert('Investor ID is required');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this investor? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      // Get auth token from cookies
+      const token = getToken();
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
+      const requestUrl = `${backendUrl}/api/investors/${investorId}`;
+
+      const response = await fetch(requestUrl, {
+        method: 'DELETE',
+        headers: headers,
+      });
+
+      if (response.ok) {
+        alert('Investor deleted successfully!');
+        // Refresh the deal data to show updated values
+        window.location.reload();
+      } else {
+        const responseData = await response.json().catch(() => ({}));
+        throw new Error(`HTTP ${response.status}: ${responseData.error || responseData.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error deleting investor:', error);
+      alert(`Failed to delete investor: ${error.message}`);
     }
   };
 
@@ -1254,7 +1519,15 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
 
       {/* Owner Information Section */}
       <div className="bg-gray-50 rounded-lg p-6">
-        <h2 className="text-xl font-semibold text-black mb-6">Owner Information</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-black">Owner Information</h2>
+          <button
+            onClick={() => router.push(`/owners/new?returnTo=/deals/${id}&section=land`)}
+            className="px-4 py-2 bg-slate-900 text-white rounded hover:bg-slate-800 text-sm font-medium"
+          >
+            + Add Owner
+          </button>
+        </div>
 
         <div className="bg-white rounded p-4 border border-gray-200">
           {owners && owners.length > 0 ? (
@@ -1308,6 +1581,18 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
                           }
                         </div>
                       </div>
+                      
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => deleteOwner(owner.id)}
+                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                        title="Delete Owner"
+                        disabled={!owner.id}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 );
@@ -1363,7 +1648,15 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
 
       {/* Investor Information Section */}
       <div className="bg-gray-50 rounded-lg p-6">
-        <h2 className="text-xl font-semibold text-black mb-6">Investor Information</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-black">Investor Information</h2>
+          <button
+            onClick={() => router.push(`/investors/new?returnTo=/deals/${id}&section=land`)}
+            className="px-4 py-2 bg-slate-900 text-white rounded hover:bg-slate-800 text-sm font-medium"
+          >
+            + Add Investor
+          </button>
+        </div>
 
         <div className="bg-white rounded p-4 border border-gray-200">
           {investors && investors.length > 0 ? (
@@ -1417,6 +1710,18 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
                           }
                         </div>
                       </div>
+                      
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => deleteInvestor(investor.id)}
+                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                        title="Delete Investor"
+                        disabled={!investor.id}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 );
@@ -1741,8 +2046,13 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
   const [filterInvestor, setFilterInvestor] = useState('all');
 
   // Chart view state
-  const [showChart, setShowChart] = useState(false);
   const [chartError, setChartError] = useState(null);
+  
+  // View state - can be 'table', 'chart', or 'profitloss'
+  const [currentView, setCurrentView] = useState('table');
+
+  // Investor selection for P&L analysis
+  const [selectedInvestorId, setSelectedInvestorId] = useState('all');
 
   // Print function for payments table
   // Enhanced professional PDF download function
@@ -2187,13 +2497,13 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
       const numericId = parseInt(id);
       console.log(`Parsing ID format: type=${type}, id=${id}, numericId=${numericId}`);
       
-      if (type === 'investor' && investors) {
+      if (type === 'investor' && Array.isArray(investors)) {
         const investor = investors.find(inv => inv.id === numericId);
         console.log(`Found investor:`, investor);
         return investor ? (investor.investor_name || investor.name) : value;
       }
       
-      if (type === 'owner' && owners) {
+      if (type === 'owner' && Array.isArray(owners)) {
         const owner = owners.find(own => own.id === numericId);
         console.log(`Found owner:`, owner);
         return owner ? (owner.name || owner.owner_name) : value;
@@ -2866,22 +3176,52 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
               </button>
               
               <button
-                onClick={() => {
-                  setShowChart(!showChart);
-                  setChartError(null);
-                }}
+                onClick={() => setCurrentView('table')}
                 className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
-                  showChart 
+                  currentView === 'table'
                     ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500' 
                     : 'bg-blue-100 text-blue-700 hover:bg-blue-200 focus:ring-blue-500'
                 }`}
-                title={showChart ? "Show Payments Table" : "Show Status Chart"}
+                title="Show Payments Table"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Table
+              </button>
+              
+              <button
+                onClick={() => {
+                  setCurrentView('chart');
+                  setChartError(null);
+                }}
+                className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
+                  currentView === 'chart'
+                    ? 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500' 
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200 focus:ring-blue-500'
+                }`}
+                title="Show Status Chart"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
                 </svg>
-                {showChart ? 'Table' : 'Chart'}
+                Chart
+              </button>
+              
+              <button
+                onClick={() => setCurrentView('profitloss')}
+                className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
+                  currentView === 'profitloss'
+                    ? 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500' 
+                    : 'bg-green-100 text-green-700 hover:bg-green-200 focus:ring-green-500'
+                }`}
+                title="Show Profit & Loss Analysis"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Profit & Loss
               </button>
             </div>
             
@@ -2892,8 +3232,8 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
         </div>
       </div>
 
-      {/* Chart/Table Toggle Content */}
-      {showChart ? (
+      {/* Content Area - Table/Chart/Profit&Loss Toggle */}
+      {currentView === 'chart' ? (
         /* Chart View */
         <div className="bg-white rounded-lg border-2 border-slate-200 shadow-sm">
           <div className="p-8">
@@ -2907,7 +3247,7 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
                 <h3 className="text-lg font-medium text-slate-900 mb-2">Chart Error</h3>
                 <p className="text-slate-600 mb-4">{chartError}</p>
                 <button
-                  onClick={() => setShowChart(false)}
+                  onClick={() => setCurrentView('table')}
                   className="px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium transition-colors"
                 >
                   View Table
@@ -3082,7 +3422,7 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
                     </div>
                     
                     <button
-                      onClick={() => setShowChart(false)}
+                      onClick={() => setCurrentView('table')}
                       className="inline-flex items-center px-4 py-2 bg-slate-600 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors"
                     >
                       <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3094,6 +3434,437 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      ) : currentView === 'profitloss' ? (
+        /* Real-time Profit & Loss Analysis */
+        <div className="bg-white rounded-lg border-2 border-slate-200 shadow-sm">
+          {/* Investor Selection Header */}
+          <div className="p-6 border-b border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">Profit & Loss Analysis</h3>
+                <p className="text-sm text-slate-600 mt-1">Real-time financial breakdown for this deal</p>
+              </div>
+              <div className="flex items-center space-x-4">
+                <label className="text-sm font-medium text-slate-700">View P&L for:</label>
+                <select
+                  value={selectedInvestorId}
+                  onChange={(e) => setSelectedInvestorId(e.target.value)}
+                  className="py-2 px-3 border-2 border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-colors bg-white min-w-[200px]"
+                >
+                  <option value="all">Overall Deal P&L</option>
+                  {investors && investors.length > 0 && investors.map((investor) => (
+                    <option key={investor.id} value={investor.id}>
+                      {investor.investor_name || investor.name || `Investor ${investor.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b-2 border-slate-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Category</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount (₹)</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {selectedInvestorId === 'all' ? (
+                  /* OVERALL DEAL P&L */
+                  <>
+                    {/* REVENUE SECTION */}
+                    <tr className="bg-green-25">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-green-800 text-lg">REVENUE</div>
+                      </td>
+                      <td className="px-6 py-4"></td>
+                      <td className="px-6 py-4"></td>
+                    </tr>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-6 py-4 pl-12">
+                        <div className="font-medium text-slate-900">Selling Price</div>
+                        <div className="text-sm text-slate-500">Total revenue from sale</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-lg font-semibold text-green-700">
+                          {deal?.sold_price ? `₹${parseFloat(deal.sold_price).toLocaleString('en-IN')}` : '₹0'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-600">
+                          {deal?.sold_price ? 'Deal completed' : 'Awaiting sale'}
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    {/* EXPENSES SECTION */}
+                    <tr className="bg-red-25">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-red-800 text-lg">EXPENSES</div>
+                      </td>
+                      <td className="px-6 py-4"></td>
+                      <td className="px-6 py-4"></td>
+                    </tr>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-6 py-4 pl-12">
+                        <div className="font-medium text-slate-900">Land Purchase Cost</div>
+                        <div className="text-sm text-slate-500">Original cost of acquisition</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-lg font-semibold text-red-700">
+                          ₹{(() => {
+                            if (!payments) return '0';
+                            const landPurchaseCost = payments
+                              .filter(payment => payment.payment_type === 'land_purchase' && (payment.status === 'completed' || payment.status === 'success'))
+                              .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                            return landPurchaseCost.toLocaleString('en-IN');
+                          })()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-600">
+                          {(() => {
+                            if (!payments) return '0 payments';
+                            const landPayments = payments.filter(payment => payment.payment_type === 'land_purchase' && (payment.status === 'completed' || payment.status === 'success'));
+                            return `${landPayments.length} payment(s)`;
+                          })()}
+                        </div>
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-6 py-4 pl-12">
+                        <div className="font-medium text-slate-900">Development & Legal Costs</div>
+                        <div className="text-sm text-slate-500">Registration, legal, development expenses</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-lg font-semibold text-red-700">
+                          ₹{(() => {
+                            if (!payments) return '0';
+                            const developmentCosts = payments
+                              .filter(payment => payment.payment_type !== 'land_purchase' && (payment.status === 'completed' || payment.status === 'success'))
+                              .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                            return developmentCosts.toLocaleString('en-IN');
+                          })()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-600">
+                          {(() => {
+                            if (!payments) return '0 payments';
+                            const devPayments = payments.filter(payment => payment.payment_type !== 'land_purchase' && (payment.status === 'completed' || payment.status === 'success'));
+                            return `${devPayments.length} payment(s)`;
+                          })()}
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    {/* TOTAL EXPENSES */}
+                    <tr className="bg-red-50 border-t border-red-200">
+                      <td className="px-6 py-4 pl-8">
+                        <div className="font-semibold text-red-900">Total Expenses</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-lg font-bold text-red-900">
+                          ₹{(() => {
+                            if (!payments) return '0';
+                            const totalPayments = payments
+                              .filter(payment => payment.status === 'completed' || payment.status === 'success')
+                              .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                            return totalPayments.toLocaleString('en-IN');
+                          })()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-red-600">All expenses combined</div>
+                      </td>
+                    </tr>
+                  </>
+                ) : (
+                  /* INDIVIDUAL INVESTOR P&L */
+                  (() => {
+                    const selectedInvestor = investors?.find(inv => inv.id?.toString() === selectedInvestorId);
+                    const investorName = selectedInvestor?.investor_name || selectedInvestor?.name || `Investor ${selectedInvestorId}`;
+                    
+                    // Calculate investor's contributions
+                    const investorPayments = payments?.filter(payment => 
+                      (payment.status === 'completed' || payment.status === 'success') &&
+                      (payment.paid_by_id?.toString() === selectedInvestorId || 
+                       payment.paid_by?.toString() === selectedInvestorId ||
+                       payment.paid_by_name === investorName)
+                    ) || [];
+                    
+                    const investorTotalContribution = investorPayments.reduce((sum, payment) => 
+                      sum + (parseFloat(payment.amount) || 0), 0);
+                    
+                    // Calculate investor's share percentage
+                    const investorSharePercentage = selectedInvestor?.share_percentage 
+                      ? parseFloat(selectedInvestor.share_percentage)
+                      : (() => {
+                          const totalInvestment = payments?.filter(payment => payment.status === 'completed' || payment.status === 'success')
+                            .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 1;
+                          return totalInvestment > 0 ? (investorTotalContribution / totalInvestment) * 100 : 0;
+                        })();
+                    
+                    // Calculate investor's expected returns
+                    const totalRevenue = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
+                    const investorExpectedRevenue = (totalRevenue * investorSharePercentage) / 100;
+                    
+                    return (
+                      <>
+                        {/* INVESTOR INFO */}
+                        <tr className="bg-blue-25">
+                          <td className="px-6 py-4">
+                            <div className="font-bold text-blue-800 text-lg">{investorName.toUpperCase()} - REVENUE</div>
+                          </td>
+                          <td className="px-6 py-4"></td>
+                          <td className="px-6 py-4"></td>
+                        </tr>
+                        <tr className="hover:bg-slate-50">
+                          <td className="px-6 py-4 pl-12">
+                            <div className="font-medium text-slate-900">Expected Share</div>
+                            <div className="text-sm text-slate-500">Based on {investorSharePercentage.toFixed(2)}% ownership</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-lg font-semibold text-blue-700">
+                              ₹{investorExpectedRevenue.toLocaleString('en-IN')}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-slate-600">
+                              {deal?.sold_price ? 'Based on sale price' : 'Awaiting sale'}
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {/* INVESTOR EXPENSES */}
+                        <tr className="bg-red-25">
+                          <td className="px-6 py-4">
+                            <div className="font-bold text-red-800 text-lg">{investorName.toUpperCase()} - INVESTMENT</div>
+                          </td>
+                          <td className="px-6 py-4"></td>
+                          <td className="px-6 py-4"></td>
+                        </tr>
+                        <tr className="hover:bg-slate-50">
+                          <td className="px-6 py-4 pl-12">
+                            <div className="font-medium text-slate-900">Total Contribution</div>
+                            <div className="text-sm text-slate-500">All payments made by investor</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-lg font-semibold text-red-700">
+                              ₹{investorTotalContribution.toLocaleString('en-IN')}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-slate-600">
+                              {investorPayments.length} payment(s)
+                            </div>
+                          </td>
+                        </tr>
+                        <tr className="hover:bg-slate-50">
+                          <td className="px-6 py-4 pl-12">
+                            <div className="font-medium text-slate-900">Share of Commission</div>
+                            <div className="text-sm text-slate-500">Proportional commission cost</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-lg font-semibold text-red-700">
+                              ₹{(() => {
+                                if (!deal?.sold_price) return '0';
+                                const totalCommission = parseFloat(deal.sold_price) * 0.02;
+                                const investorCommission = (totalCommission * investorSharePercentage) / 100;
+                                return investorCommission.toLocaleString('en-IN');
+                              })()}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-slate-600">{investorSharePercentage.toFixed(2)}% of total commission</div>
+                          </td>
+                        </tr>
+                      </>
+                    );
+                  })()
+                )}
+                
+                {/* PROFIT/LOSS CALCULATION */}
+                <tr className="bg-slate-100 border-t-2 border-slate-300">
+                  <td className="px-6 py-4">
+                    <div className="font-bold text-slate-900 text-lg">
+                      {(() => {
+                        if (selectedInvestorId === 'all') {
+                          if (!deal?.sold_price || !payments) return 'PROFIT/LOSS';
+                          const revenue = parseFloat(deal.sold_price);
+                          const totalExpenses = payments
+                            .filter(payment => payment.status === 'completed' || payment.status === 'success')
+                            .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                          const profit = revenue - totalExpenses;
+                          return profit >= 0 ? 'NET PROFIT' : 'NET LOSS';
+                        } else {
+                          const selectedInvestor = investors?.find(inv => inv.id?.toString() === selectedInvestorId);
+                          const investorName = selectedInvestor?.investor_name || selectedInvestor?.name || `Investor ${selectedInvestorId}`;
+                          const investorPayments = payments?.filter(payment => 
+                            (payment.status === 'completed' || payment.status === 'success') &&
+                            (payment.paid_by_id?.toString() === selectedInvestorId || 
+                             payment.paid_by?.toString() === selectedInvestorId ||
+                             payment.paid_by_name === investorName)
+                          ) || [];
+                          const investorTotalContribution = investorPayments.reduce((sum, payment) => 
+                            sum + (parseFloat(payment.amount) || 0), 0);
+                          const investorSharePercentage = selectedInvestor?.share_percentage 
+                            ? parseFloat(selectedInvestor.share_percentage)
+                            : (() => {
+                                const totalInvestment = payments?.filter(payment => payment.status === 'completed' || payment.status === 'success')
+                                  .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 1;
+                                return totalInvestment > 0 ? (investorTotalContribution / totalInvestment) * 100 : 0;
+                              })();
+                          const totalRevenue = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
+                          const investorExpectedRevenue = (totalRevenue * investorSharePercentage) / 100;
+                          const investorProfit = investorExpectedRevenue - investorTotalContribution;
+                          return investorProfit >= 0 ? `${investorName.toUpperCase()} - NET PROFIT` : `${investorName.toUpperCase()} - NET LOSS`;
+                        }
+                      })()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className={`text-xl font-bold ${(() => {
+                      if (selectedInvestorId === 'all') {
+                        if (!deal?.sold_price || !payments) return 'text-slate-500';
+                        const revenue = parseFloat(deal.sold_price);
+                        const totalExpenses = payments
+                          .filter(payment => payment.status === 'completed' || payment.status === 'success')
+                          .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) + (revenue * 0.02);
+                        const profit = revenue - totalExpenses;
+                        return profit >= 0 ? 'text-green-600' : 'text-red-600';
+                      } else {
+                        const selectedInvestor = investors?.find(inv => inv.id?.toString() === selectedInvestorId);
+                        const investorName = selectedInvestor?.investor_name || selectedInvestor?.name || `Investor ${selectedInvestorId}`;
+                        const investorPayments = payments?.filter(payment => 
+                          (payment.status === 'completed' || payment.status === 'success') &&
+                          (payment.paid_by_id?.toString() === selectedInvestorId || 
+                           payment.paid_by?.toString() === selectedInvestorId ||
+                           payment.paid_by_name === investorName)
+                        ) || [];
+                        const investorTotalContribution = investorPayments.reduce((sum, payment) => 
+                          sum + (parseFloat(payment.amount) || 0), 0);
+                        const investorSharePercentage = selectedInvestor?.share_percentage 
+                          ? parseFloat(selectedInvestor.share_percentage)
+                          : (() => {
+                              const totalInvestment = payments?.filter(payment => payment.status === 'completed' || payment.status === 'success')
+                                .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 1;
+                              return totalInvestment > 0 ? (investorTotalContribution / totalInvestment) * 100 : 0;
+                            })();
+                        const totalRevenue = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
+                        const investorExpectedRevenue = (totalRevenue * investorSharePercentage) / 100;
+                        const investorProfit = investorExpectedRevenue - investorTotalContribution;
+                        return investorProfit >= 0 ? 'text-green-600' : 'text-red-600';
+                      }
+                    })()}`}>
+                      {(() => {
+                        if (selectedInvestorId === 'all') {
+                          if (!deal?.sold_price || !payments) return 'TBD';
+                          const revenue = parseFloat(deal.sold_price);
+                          const totalExpenses = payments
+                            .filter(payment => payment.status === 'completed' || payment.status === 'success')
+                            .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                          const profit = revenue - totalExpenses;
+                          return `₹${Math.abs(profit).toLocaleString('en-IN')}`;
+                        } else {
+                          const selectedInvestor = investors?.find(inv => inv.id?.toString() === selectedInvestorId);
+                          const investorName = selectedInvestor?.investor_name || selectedInvestor?.name || `Investor ${selectedInvestorId}`;
+                          const investorPayments = payments?.filter(payment => 
+                            (payment.status === 'completed' || payment.status === 'success') &&
+                            (payment.paid_by_id?.toString() === selectedInvestorId || 
+                             payment.paid_by?.toString() === selectedInvestorId ||
+                             payment.paid_by_name === investorName)
+                          ) || [];
+                          const investorTotalContribution = investorPayments.reduce((sum, payment) => 
+                            sum + (parseFloat(payment.amount) || 0), 0);
+                          const investorSharePercentage = selectedInvestor?.share_percentage 
+                            ? parseFloat(selectedInvestor.share_percentage)
+                            : (() => {
+                                const totalInvestment = payments?.filter(payment => payment.status === 'completed' || payment.status === 'success')
+                                  .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 1;
+                                return totalInvestment > 0 ? (investorTotalContribution / totalInvestment) * 100 : 0;
+                              })();
+                          const totalRevenue = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
+                          const investorExpectedRevenue = (totalRevenue * investorSharePercentage) / 100;
+                          const investorProfit = investorExpectedRevenue - investorTotalContribution;
+                          return `₹${Math.abs(investorProfit).toLocaleString('en-IN')}`;
+                        }
+                      })()}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-slate-600">
+                      {(() => {
+                        if (selectedInvestorId === 'all') {
+                          if (!deal?.sold_price || !payments) return 'Awaiting deal completion';
+                          const revenue = parseFloat(deal.sold_price);
+                          const totalExpenses = payments
+                            .filter(payment => payment.status === 'completed' || payment.status === 'success')
+                            .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                          const profit = revenue - totalExpenses;
+                          const margin = revenue > 0 ? ((profit / revenue) * 100).toFixed(2) : 0;
+                          return `${margin}% margin`;
+                        } else {
+                          const selectedInvestor = investors?.find(inv => inv.id?.toString() === selectedInvestorId);
+                          const investorName = selectedInvestor?.investor_name || selectedInvestor?.name || `Investor ${selectedInvestorId}`;
+                          const investorPayments = payments?.filter(payment => 
+                            (payment.status === 'completed' || payment.status === 'success') &&
+                            (payment.paid_by_id?.toString() === selectedInvestorId || 
+                             payment.paid_by?.toString() === selectedInvestorId ||
+                             payment.paid_by_name === investorName)
+                          ) || [];
+                          const investorTotalContribution = investorPayments.reduce((sum, payment) => 
+                            sum + (parseFloat(payment.amount) || 0), 0);
+                          const investorSharePercentage = selectedInvestor?.share_percentage 
+                            ? parseFloat(selectedInvestor.share_percentage)
+                            : (() => {
+                                const totalInvestment = payments?.filter(payment => payment.status === 'completed' || payment.status === 'success')
+                                  .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 1;
+                                return totalInvestment > 0 ? (investorTotalContribution / totalInvestment) * 100 : 0;
+                              })();
+                          const totalRevenue = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
+                          const investorExpectedRevenue = (totalRevenue * investorSharePercentage) / 100;
+                          const investorProfit = investorExpectedRevenue - investorTotalContribution;
+                          const roi = investorTotalContribution > 0 ? ((investorProfit / investorTotalContribution) * 100).toFixed(2) : 0;
+                          return `${roi}% ROI`;
+                        }
+                      })()}
+                    </div>
+                  </td>
+                </tr>
+                
+                {selectedInvestorId === 'all' && (
+                  /* ROI CALCULATION - Only for overall deal */
+                  <tr className="bg-blue-50">
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-blue-900">Return on Investment (ROI)</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-lg font-semibold text-blue-700">
+                        {(() => {
+                          if (!deal?.sold_price || !payments) return 'TBD';
+                          const revenue = parseFloat(deal.sold_price);
+                          const totalInvestment = payments
+                            .filter(payment => payment.status === 'completed' || payment.status === 'success')
+                            .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                          const profit = revenue - totalInvestment;
+                          const roi = totalInvestment > 0 ? ((profit / totalInvestment) * 100).toFixed(2) : 0;
+                          return `${roi}%`;
+                        })()}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-blue-600">Profit relative to investment</div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : (
@@ -3360,6 +4131,30 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
     }
   };
 
+  const handleDeleteBuyer = async (buyerId) => {
+    if (!window.confirm('Are you sure you want to delete this buyer?')) {
+      return;
+    }
+
+    try {
+      await dealAPI.deleteBuyer(deal.id, buyerId);
+      toast.success('Buyer deleted successfully!');
+      
+      // Update local buyers state
+      setBuyers(prevBuyers => prevBuyers.filter((buyer, index) => 
+        buyer.id ? buyer.id !== buyerId : index !== buyerId
+      ));
+      
+      // Refresh deal data
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error('Error deleting buyer:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete buyer');
+    }
+  };
+
   const handleCancelAddBuyer = () => {
     setBuyerForm({
       name: '',
@@ -3486,6 +4281,15 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
                       </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => handleDeleteBuyer(buyer.id || index)}
+                    className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                    title="Delete Buyer"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1-1H8a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>
@@ -3592,6 +4396,326 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
               </div>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Profit & Loss Analysis Section Component
+function ProfitLossSection({ deal, payments, investors, selectedInvestorId, setSelectedInvestorId }) {
+  const formatAmount = (amount) => {
+    if (!amount || amount === 0) return '₹0';
+    return `₹${parseFloat(amount).toLocaleString('en-IN')}`;
+  };
+
+  // Calculate overall deal P&L
+  const calculateOverallPL = () => {
+    const revenue = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
+    const totalExpenses = payments
+      ?.filter(payment => payment.status === 'completed' || payment.status === 'success')
+      ?.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 0;
+    const netProfit = revenue - totalExpenses;
+    const roi = totalExpenses > 0 ? ((netProfit / totalExpenses) * 100) : 0;
+    
+    return {
+      revenue,
+      totalExpenses,
+      netProfit,
+      roi,
+      margin: revenue > 0 ? ((netProfit / revenue) * 100) : 0
+    };
+  };
+
+  // Calculate individual investor P&L
+  const calculateInvestorPL = (investorId) => {
+    const selectedInvestor = investors?.find(inv => inv.id?.toString() === investorId);
+    if (!selectedInvestor) return null;
+
+    const investorName = selectedInvestor.investor_name || selectedInvestor.name || `Investor ${investorId}`;
+    
+    // Find investor's payments
+    const investorPayments = payments?.filter(payment => 
+      (payment.status === 'completed' || payment.status === 'success') &&
+      (payment.paid_by_id?.toString() === investorId || 
+       payment.paid_by?.toString() === investorId ||
+       payment.paid_by_name === investorName)
+    ) || [];
+    
+    const investorTotalContribution = investorPayments.reduce((sum, payment) => 
+      sum + (parseFloat(payment.amount) || 0), 0);
+    
+    // Calculate investor's share percentage
+    const investorSharePercentage = selectedInvestor.share_percentage 
+      ? parseFloat(selectedInvestor.share_percentage)
+      : (() => {
+          const totalInvestment = payments?.filter(payment => payment.status === 'completed' || payment.status === 'success')
+            .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 1;
+          return totalInvestment > 0 ? (investorTotalContribution / totalInvestment) * 100 : 0;
+        })();
+    
+    // Calculate investor's expected returns
+    const totalRevenue = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
+    const investorExpectedRevenue = (totalRevenue * investorSharePercentage) / 100;
+    const investorProfit = investorExpectedRevenue - investorTotalContribution;
+    const investorROI = investorTotalContribution > 0 ? ((investorProfit / investorTotalContribution) * 100) : 0;
+    
+    return {
+      name: investorName,
+      sharePercentage: investorSharePercentage,
+      totalContribution: investorTotalContribution,
+      expectedRevenue: investorExpectedRevenue,
+      netProfit: investorProfit,
+      roi: investorROI,
+      paymentCount: investorPayments.length
+    };
+  };
+
+  const overallPL = calculateOverallPL();
+  const investorPL = selectedInvestorId !== 'all' ? calculateInvestorPL(selectedInvestorId) : null;
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Investor Selection */}
+      <div className="bg-white rounded-lg border-2 border-slate-200 shadow-sm">
+        <div className="p-6 border-b border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">Profit & Loss Analysis</h2>
+              <p className="text-sm text-slate-600 mt-1">Real-time financial breakdown for this deal</p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <label className="text-sm font-medium text-slate-700">View P&L for:</label>
+              <select
+                value={selectedInvestorId}
+                onChange={(e) => setSelectedInvestorId(e.target.value)}
+                className="py-2 px-3 border-2 border-slate-300 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-colors bg-white min-w-[200px]"
+              >
+                <option value="all">Overall Deal P&L</option>
+                {investors && investors.length > 0 && investors.map((investor) => (
+                  <option key={investor.id} value={investor.id}>
+                    {investor.investor_name || investor.name || `Investor ${investor.id}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* P&L Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b-2 border-slate-200">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Category</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount (₹)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {selectedInvestorId === 'all' ? (
+                /* OVERALL DEAL P&L */
+                <>
+                  {/* REVENUE SECTION */}
+                  <tr className="bg-green-25">
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-green-800 text-lg">REVENUE</div>
+                    </td>
+                    <td className="px-6 py-4"></td>
+                    <td className="px-6 py-4"></td>
+                  </tr>
+                  <tr className="hover:bg-slate-50">
+                    <td className="px-6 py-4 pl-12">
+                      <div className="font-medium text-slate-900">Selling Price</div>
+                      <div className="text-sm text-slate-500">Total revenue from sale</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-lg font-semibold text-green-700">
+                        {formatAmount(overallPL.revenue)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-slate-600">
+                        {deal?.sold_price ? 'Deal completed' : 'Awaiting sale'}
+                      </div>
+                    </td>
+                  </tr>
+                  
+                  {/* EXPENSES SECTION */}
+                  <tr className="bg-red-25">
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-red-800 text-lg">EXPENSES</div>
+                    </td>
+                    <td className="px-6 py-4"></td>
+                    <td className="px-6 py-4"></td>
+                  </tr>
+                  <tr className="hover:bg-slate-50">
+                    <td className="px-6 py-4 pl-12">
+                      <div className="font-medium text-slate-900">Land Purchase & Development</div>
+                      <div className="text-sm text-slate-500">Total payments made</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-lg font-semibold text-red-700">
+                        {formatAmount(overallPL.totalExpenses)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-slate-600">
+                        {payments?.filter(p => p.status === 'completed' || p.status === 'success').length || 0} payment(s)
+                      </div>
+                    </td>
+                  </tr>
+                </>
+              ) : (
+                /* INDIVIDUAL INVESTOR P&L */
+                investorPL && (
+                  <>
+                    {/* INVESTOR REVENUE */}
+                    <tr className="bg-blue-25">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-blue-800 text-lg">{investorPL.name.toUpperCase()} - REVENUE</div>
+                      </td>
+                      <td className="px-6 py-4"></td>
+                      <td className="px-6 py-4"></td>
+                    </tr>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-6 py-4 pl-12">
+                        <div className="font-medium text-slate-900">Expected Share</div>
+                        <div className="text-sm text-slate-500">Based on {investorPL.sharePercentage.toFixed(2)}% ownership</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-lg font-semibold text-blue-700">
+                          {formatAmount(investorPL.expectedRevenue)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-600">
+                          {deal?.sold_price ? 'Based on sale price' : 'Awaiting sale'}
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    {/* INVESTOR EXPENSES */}
+                    <tr className="bg-red-25">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-red-800 text-lg">{investorPL.name.toUpperCase()} - INVESTMENT</div>
+                      </td>
+                      <td className="px-6 py-4"></td>
+                      <td className="px-6 py-4"></td>
+                    </tr>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-6 py-4 pl-12">
+                        <div className="font-medium text-slate-900">Total Contribution</div>
+                        <div className="text-sm text-slate-500">All payments made by investor</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-lg font-semibold text-red-700">
+                          {formatAmount(investorPL.totalContribution)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-600">
+                          {investorPL.paymentCount} payment(s)
+                        </div>
+                      </td>
+                    </tr>
+                  </>
+                )
+              )}
+              
+              {/* PROFIT/LOSS CALCULATION */}
+              <tr className="bg-slate-100 border-t-2 border-slate-300">
+                <td className="px-6 py-4">
+                  <div className="font-bold text-slate-900 text-lg">
+                    {selectedInvestorId === 'all' 
+                      ? (overallPL.netProfit >= 0 ? 'NET PROFIT' : 'NET LOSS')
+                      : investorPL && (investorPL.netProfit >= 0 ? `${investorPL.name.toUpperCase()} - NET PROFIT` : `${investorPL.name.toUpperCase()} - NET LOSS`)
+                    }
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className={`text-xl font-bold ${
+                    selectedInvestorId === 'all' 
+                      ? (overallPL.netProfit >= 0 ? 'text-green-600' : 'text-red-600')
+                      : investorPL && (investorPL.netProfit >= 0 ? 'text-green-600' : 'text-red-600')
+                  }`}>
+                    {selectedInvestorId === 'all' 
+                      ? formatAmount(Math.abs(overallPL.netProfit))
+                      : investorPL && formatAmount(Math.abs(investorPL.netProfit))
+                    }
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="text-sm text-slate-600">
+                    {selectedInvestorId === 'all' 
+                      ? `${overallPL.margin.toFixed(2)}% margin`
+                      : investorPL && `${investorPL.roi.toFixed(2)}% ROI`
+                    }
+                  </div>
+                </td>
+              </tr>
+              
+              {selectedInvestorId === 'all' && (
+                /* ROI CALCULATION - Only for overall deal */
+                <tr className="bg-blue-50">
+                  <td className="px-6 py-4">
+                    <div className="font-semibold text-blue-900">Return on Investment (ROI)</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-lg font-semibold text-blue-700">
+                      {overallPL.roi.toFixed(2)}%
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-blue-600">Profit relative to investment</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="p-6 border-t border-slate-200 bg-slate-50">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {selectedInvestorId === 'all' ? (
+              <>
+                <div className="bg-white p-4 rounded-lg border border-slate-200">
+                  <div className="text-sm text-slate-600">Total Revenue</div>
+                  <div className="text-xl font-bold text-green-600">{formatAmount(overallPL.revenue)}</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg border border-slate-200">
+                  <div className="text-sm text-slate-600">Total Expenses</div>
+                  <div className="text-xl font-bold text-red-600">{formatAmount(overallPL.totalExpenses)}</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg border border-slate-200">
+                  <div className="text-sm text-slate-600">Net Profit/Loss</div>
+                  <div className={`text-xl font-bold ${overallPL.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatAmount(Math.abs(overallPL.netProfit))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              investorPL && (
+                <>
+                  <div className="bg-white p-4 rounded-lg border border-slate-200">
+                    <div className="text-sm text-slate-600">Expected Share</div>
+                    <div className="text-xl font-bold text-blue-600">{formatAmount(investorPL.expectedRevenue)}</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border border-slate-200">
+                    <div className="text-sm text-slate-600">Total Investment</div>
+                    <div className="text-xl font-bold text-red-600">{formatAmount(investorPL.totalContribution)}</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border border-slate-200">
+                    <div className="text-sm text-slate-600">Net Profit/Loss</div>
+                    <div className={`text-xl font-bold ${investorPL.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatAmount(Math.abs(investorPL.netProfit))}
+                    </div>
+                  </div>
+                </>
+              )
+            )}
+          </div>
         </div>
       </div>
     </div>

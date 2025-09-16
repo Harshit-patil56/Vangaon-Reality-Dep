@@ -196,29 +196,42 @@ app = Flask(__name__)
 app.static_folder = 'uploads'
 app.static_url_path = '/uploads'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'fallback-dev-key-not-for-production')
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))  # 16MB default
 
 # Enable response compression for better performance
 Compress(app)
 
 APP_ROOT = os.path.dirname(__file__)
 # Use absolute uploads folder inside backend so static serving works predictably
-app.config['UPLOAD_FOLDER'] = os.path.join(APP_ROOT, 'uploads')
-CORS(app, origins='*', supports_credentials=True, methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+app.config['UPLOAD_FOLDER'] = os.path.join(APP_ROOT, os.environ.get('UPLOAD_FOLDER', 'uploads'))
+
+# Configure CORS with environment variable for frontend URL
+frontend_origins = [
+    os.environ.get('FRONTEND_URL', 'http://localhost:3000'),
+    'http://localhost:3000',  # Always allow localhost for development
+]
+CORS(app, origins=frontend_origins, supports_credentials=True, methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
      allow_headers=['Content-Type', 'Authorization', 'Range'],
      expose_headers=['Content-Range', 'Accept-Ranges', 'Content-Length', 'Content-Type'])
 
 
 # Database configuration
 DB_CONFIG = {
-    'host': os.environ.get('DB_HOST', 'mysql-3ca7d4a2-romitmeher-d46c.g.aivencloud.com'),
-    'port': int(os.environ.get('DB_PORT', 17231)),
-    'user': os.environ.get('DB_USER', 'avnadmin'),
+    'host': os.environ.get('DB_HOST'),
+    'port': int(os.environ.get('DB_PORT', 3306)),
+    'user': os.environ.get('DB_USER'),
     'password': os.environ.get('DB_PASSWORD'),
-    'database': os.environ.get('DB_NAME', 'land_deals_db'),
-    'ssl_ca': os.path.join(os.path.dirname(__file__), 'ca-certificate.pem'),
-    'ssl_verify_cert': True,
-    'ssl_verify_identity': True
+    'database': os.environ.get('DB_NAME'),
 }
+
+# Add SSL configuration only if SSL certificate exists (for cloud databases)
+ssl_ca_path = os.path.join(os.path.dirname(__file__), 'ca-certificate.pem')
+if os.path.exists(ssl_ca_path) and os.environ.get('DB_HOST') and 'aivencloud.com' in os.environ.get('DB_HOST', ''):
+    DB_CONFIG.update({
+        'ssl_ca': ssl_ca_path,
+        'ssl_verify_cert': True,
+        'ssl_verify_identity': True
+    })
 
 # Create uploads directory if it doesn't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -256,6 +269,43 @@ def token_required(f):
             current_user = data['user_id']
         except:
             return jsonify({'error': 'Token is invalid'}), 401
+        
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+def user_access_control(f):
+    """
+    Decorator to add user-specific access control.
+    Regular users can only access data linked to their owner_id or investor_id.
+    Admin and auditor roles have full access.
+    """
+    @wraps(f)
+    def decorated(current_user, *args, **kwargs):
+        # Get user information from database
+        conn = None
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT role, owner_id, investor_id FROM users WHERE id = %s", (current_user,))
+            user_data = cur.fetchone()
+            
+            if not user_data:
+                return jsonify({'error': 'User not found'}), 403
+            
+            # Add user access control info to request
+            request.user_access = {
+                'role': user_data['role'],
+                'owner_id': user_data['owner_id'],
+                'investor_id': user_data['investor_id'],
+                'can_access_all': user_data['role'] in ['admin', 'auditor'],
+                'is_read_only': user_data['role'] == 'user'
+            }
+            
+        except Exception as e:
+            return jsonify({'error': 'Access control check failed'}), 500
+        finally:
+            if conn:
+                conn.close()
         
         return f(current_user, *args, **kwargs)
     return decorated
@@ -2992,7 +3042,21 @@ def create_deal(current_user):
         # Insert investors
         investors = data.get('investors', [])
         for investor in investors:
-            if investor.get('investor_name'):
+            if investor.get('existing_investor_id'):
+                # Link to existing investor instead of duplicating
+                # Create a new record but mark it as linked to the original with parent_investor_id
+                cursor.execute("""
+                    INSERT INTO investors (deal_id, investor_name, investment_amount, 
+                                         investment_percentage, mobile, email,
+                                         aadhar_card, pan_card, is_starred, parent_investor_id)
+                    SELECT %s, investor_name, investment_amount, investment_percentage, 
+                           mobile, email, aadhar_card, pan_card, is_starred, %s
+                    FROM investors 
+                    WHERE id = %s
+                    LIMIT 1
+                """, (deal_id, investor.get('existing_investor_id'), investor.get('existing_investor_id')))
+            elif investor.get('investor_name'):
+                # Create new investor
                 # Normalize investment_amount -> always send a numeric (0 if empty/invalid)
                 inv_amt_raw = investor.get('investment_amount')
                 if isinstance(inv_amt_raw, str):
@@ -3469,6 +3533,50 @@ def add_buyer_to_deal(current_user, deal_id):
         if connection:
             connection.close()
 
+@app.route('/api/deals/<int:deal_id>/buyers/<int:buyer_id>', methods=['DELETE'])
+@token_required
+def delete_buyer_from_deal(current_user, deal_id, buyer_id):
+    """Delete a buyer from a deal"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor()
+        
+        # Check if deal exists
+        cursor.execute("SELECT id FROM deals WHERE id = %s", (deal_id,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Deal not found'}), 404
+        
+        # Check if buyer exists and belongs to this deal
+        cursor.execute("SELECT id FROM buyers WHERE id = %s AND deal_id = %s", (buyer_id, deal_id))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Buyer not found'}), 404
+        
+        # Delete the buyer
+        cursor.execute("DELETE FROM buyers WHERE id = %s AND deal_id = %s", (buyer_id, deal_id))
+        connection.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Buyer deleted successfully'
+        })
+        
+    except mysql.connector.Error as e:
+        if connection:
+            connection.rollback()
+        app.logger.error(f"Database error deleting buyer: {e}")
+        return jsonify({'error': 'Database error occurred'}), 500
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        app.logger.error(f"Error deleting buyer: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
 @app.route('/api/deals/<int:deal_id>/selling-amount', methods=['PUT'])
 @token_required
 def update_selling_amount(current_user, deal_id):
@@ -3587,32 +3695,165 @@ def add_expense(current_user, deal_id):
 # Owners API endpoints
 @app.route('/api/owners', methods=['GET'])
 @token_required
+@user_access_control
 def get_all_owners(current_user):
-    """Get all owners with their project counts and total investment"""
+    """Get owners with pagination, search, and sorting - filtered by user access level"""
     try:
+        # Get pagination parameters
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 5))
+        search = request.args.get('search', '').strip()
+        sort_by = request.args.get('sort_by', 'name')
+        sort_order = request.args.get('sort_order', 'asc')
+        starred_only = request.args.get('starred_only', 'false').lower() == 'true'
+        
+        # Validate sort parameters
+        valid_sort_fields = ['name', 'mobile', 'aadhar_card', 'pan_card', 'id']
+        if sort_by not in valid_sort_fields:
+            sort_by = 'name'
+        
+        sort_order = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
+        
+        # Calculate offset
+        offset = (page - 1) * limit
+        
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         
-        cursor.execute("""
-            SELECT 
-                MIN(o.id) as id,
-                o.name,
-                o.mobile,
-                o.email,
-                o.aadhar_card,
-                o.pan_card,
-                COALESCE(MAX(o.is_starred), FALSE) as is_starred,
-                COUNT(DISTINCT o.deal_id) as total_projects,
-                COUNT(DISTINCT CASE WHEN d.status = 'active' THEN d.id END) as active_projects,
-                0 as total_investment
-            FROM owners o
-            LEFT JOIN deals d ON o.deal_id = d.id
-            GROUP BY o.name, o.mobile, o.email, o.aadhar_card, o.pan_card
-            ORDER BY o.name
-        """)
-        owners = cursor.fetchall()
+        # Build base query based on user access level
+        if request.user_access['can_access_all']:
+            # Admin/Auditor can see all owners
+            base_query = """
+                FROM owners o
+                LEFT JOIN deals d ON o.deal_id = d.id
+            """
+            where_conditions = []
+            query_params = []
+            
+            # Add starred filter if requested
+            if starred_only:
+                where_conditions.append("o.is_starred = TRUE")
+            
+            # Add search conditions
+            if search:
+                search_condition = """(
+                    o.name LIKE %s OR 
+                    o.mobile LIKE %s OR 
+                    o.aadhar_card LIKE %s OR 
+                    o.pan_card LIKE %s
+                )"""
+                where_conditions.append(search_condition)
+                search_param = f"%{search}%"
+                query_params.extend([search_param, search_param, search_param, search_param])
+            
+            where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+            
+            # Get total count
+            count_query = f"""
+                SELECT COUNT(DISTINCT CONCAT(o.name, '|', COALESCE(o.mobile, ''), '|', COALESCE(o.email, ''), '|', COALESCE(o.aadhar_card, ''), '|', COALESCE(o.pan_card, '')))
+                {base_query}
+                {where_clause}
+            """
+            cursor.execute(count_query, query_params)
+            total_count = cursor.fetchone()['COUNT(DISTINCT CONCAT(o.name, \'|\', COALESCE(o.mobile, \'\'), \'|\', COALESCE(o.email, \'\'), \'|\', COALESCE(o.aadhar_card, \'\'), \'|\', COALESCE(o.pan_card, \'\')))']
+            
+            # Get paginated data
+            data_query = f"""
+                SELECT 
+                    MIN(o.id) as id,
+                    o.name,
+                    o.mobile,
+                    o.email,
+                    o.aadhar_card,
+                    o.pan_card,
+                    COALESCE(MAX(o.is_starred), FALSE) as is_starred,
+                    COUNT(DISTINCT o.deal_id) as total_projects,
+                    COUNT(DISTINCT CASE WHEN d.status = 'active' THEN d.id END) as active_projects,
+                    0 as total_investment
+                {base_query}
+                {where_clause}
+                GROUP BY o.name, o.mobile, o.email, o.aadhar_card, o.pan_card
+                ORDER BY {sort_by} {sort_order}
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(data_query, query_params + [limit, offset])
+            
+        elif request.user_access['owner_id']:
+            # Regular user linked to owner - can only see their own data
+            where_conditions = ["o.id = %s"]
+            query_params = [request.user_access['owner_id']]
+            
+            if starred_only:
+                where_conditions.append("o.is_starred = TRUE")
+            
+            if search:
+                search_condition = """(
+                    o.name LIKE %s OR 
+                    o.mobile LIKE %s OR 
+                    o.aadhar_card LIKE %s OR 
+                    o.pan_card LIKE %s
+                )"""
+                where_conditions.append(search_condition)
+                search_param = f"%{search}%"
+                query_params.extend([search_param, search_param, search_param, search_param])
+            
+            where_clause = " WHERE " + " AND ".join(where_conditions)
+            
+            # Count query
+            count_query = f"""
+                SELECT COUNT(DISTINCT CONCAT(o.name, '|', COALESCE(o.mobile, ''), '|', COALESCE(o.email, ''), '|', COALESCE(o.aadhar_card, ''), '|', COALESCE(o.pan_card, '')))
+                FROM owners o
+                LEFT JOIN deals d ON o.deal_id = d.id
+                {where_clause}
+            """
+            cursor.execute(count_query, query_params)
+            total_count = cursor.fetchone()['COUNT(DISTINCT CONCAT(o.name, \'|\', COALESCE(o.mobile, \'\'), \'|\', COALESCE(o.email, \'\'), \'|\', COALESCE(o.aadhar_card, \'\'), \'|\', COALESCE(o.pan_card, \'\')))']
+            
+            # Data query
+            data_query = f"""
+                SELECT 
+                    MIN(o.id) as id,
+                    o.name,
+                    o.mobile,
+                    o.email,
+                    o.aadhar_card,
+                    o.pan_card,
+                    COALESCE(MAX(o.is_starred), FALSE) as is_starred,
+                    COUNT(DISTINCT o.deal_id) as total_projects,
+                    COUNT(DISTINCT CASE WHEN d.status = 'active' THEN d.id END) as active_projects,
+                    0 as total_investment
+                FROM owners o
+                LEFT JOIN deals d ON o.deal_id = d.id
+                {where_clause}
+                GROUP BY o.name, o.mobile, o.email, o.aadhar_card, o.pan_card
+                ORDER BY {sort_by} {sort_order}
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(data_query, query_params + [limit, offset])
+        else:
+            # User linked to investor or no link - return empty result for owners
+            return jsonify({
+                'data': [],
+                'pagination': {
+                    'page': page,
+                    'limit': limit,
+                    'total': 0,
+                    'pages': 0
+                }
+            })
         
-        return jsonify(owners)
+        owners = cursor.fetchall()
+        total_pages = (total_count + limit - 1) // limit  # Ceiling division
+        
+        return jsonify({
+            'data': owners,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total': total_count,
+                'pages': total_pages
+            }
+        })
     
     except Exception as e:
         print(f"Error in get_all_owners: {str(e)}")
@@ -3934,18 +4175,137 @@ def get_owner_documents(current_user, owner_id):
 
 @app.route('/api/investors', methods=['GET'])
 @token_required
+@user_access_control
 def get_investors(current_user):
-    """Get all investors"""
+    """Get investors with pagination, search, and sorting - filtered by user access level"""
+    connection = None
     try:
+        # Get pagination parameters
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 5))
+        search = request.args.get('search', '').strip()
+        sort_by = request.args.get('sort_by', 'investor_name')
+        sort_order = request.args.get('sort_order', 'asc')
+        starred_only = request.args.get('starred_only', 'false').lower() == 'true'
+        
+        # Validate sort parameters
+        valid_sort_fields = ['investor_name', 'mobile', 'aadhar_card', 'pan_card', 'id', 'investment_amount', 'investment_percentage']
+        if sort_by not in valid_sort_fields:
+            sort_by = 'investor_name'
+        
+        sort_order = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
+        
+        # Calculate offset
+        offset = (page - 1) * limit
+        
         connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
         cursor = connection.cursor(dictionary=True)
         
-        cursor.execute("""
-            SELECT i.*, d.project_name as deal_title
-            FROM investors i
-            LEFT JOIN deals d ON i.deal_id = d.id
-            ORDER BY i.created_at DESC
-        """)
+        # Build query based on user access level
+        if request.user_access['can_access_all']:
+            # Admin/Auditor can see all investors
+            base_query = """
+                FROM investors i
+                LEFT JOIN deals d ON i.deal_id = d.id
+            """
+            where_conditions = ["i.parent_investor_id IS NULL"]  # Exclude duplicate investors
+            query_params = []
+            
+            # Add starred filter if requested
+            if starred_only:
+                where_conditions.append("i.is_starred = TRUE")
+            
+            # Add search conditions
+            if search:
+                search_condition = """(
+                    i.investor_name LIKE %s OR 
+                    i.mobile LIKE %s OR 
+                    i.aadhar_card LIKE %s OR 
+                    i.pan_card LIKE %s OR
+                    i.email LIKE %s
+                )"""
+                where_conditions.append(search_condition)
+                search_param = f"%{search}%"
+                query_params.extend([search_param, search_param, search_param, search_param, search_param])
+            
+            where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+            
+            # Get total count
+            count_query = f"""
+                SELECT COUNT(*)
+                {base_query}
+                {where_clause}
+            """
+            cursor.execute(count_query, query_params)
+            total_count = cursor.fetchone()['COUNT(*)']
+            
+            # Get paginated data
+            data_query = f"""
+                SELECT i.*, d.project_name as deal_title
+                {base_query}
+                {where_clause}
+                ORDER BY {sort_by} {sort_order}
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(data_query, query_params + [limit, offset])
+            
+        elif request.user_access['investor_id']:
+            # Regular user linked to investor - can only see their own data
+            where_conditions = ["i.id = %s", "i.parent_investor_id IS NULL"]  # Exclude duplicates
+            query_params = [request.user_access['investor_id']]
+            
+            if starred_only:
+                where_conditions.append("i.is_starred = TRUE")
+            
+            if search:
+                search_condition = """(
+                    i.investor_name LIKE %s OR 
+                    i.mobile LIKE %s OR 
+                    i.aadhar_card LIKE %s OR 
+                    i.pan_card LIKE %s OR
+                    i.email LIKE %s
+                )"""
+                where_conditions.append(search_condition)
+                search_param = f"%{search}%"
+                query_params.extend([search_param, search_param, search_param, search_param, search_param])
+            
+            where_clause = " WHERE " + " AND ".join(where_conditions)
+            
+            # Get count for user's own data
+            count_query = f"""
+                SELECT COUNT(*)
+                FROM investors i
+                LEFT JOIN deals d ON i.deal_id = d.id
+                {where_clause}
+            """
+            cursor.execute(count_query, query_params)
+            total_count = cursor.fetchone()['COUNT(*)']
+            
+            # Get paginated data for user's own data
+            data_query = f"""
+                SELECT i.*, d.project_name as deal_title
+                FROM investors i
+                LEFT JOIN deals d ON i.deal_id = d.id
+                {where_clause}
+                ORDER BY {sort_by} {sort_order}
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(data_query, query_params + [limit, offset])
+            
+        else:
+            # User linked to owner or no link - return empty result for investors
+            return jsonify({
+                'data': [],
+                'pagination': {
+                    'current_page': page,
+                    'total_pages': 0,
+                    'total': 0,
+                    'per_page': limit
+                }
+            })
         
         investors = cursor.fetchall()
         
@@ -3968,9 +4328,21 @@ def get_investors(current_user):
                 'created_at': investor['created_at'].isoformat() if investor['created_at'] else None
             })
         
-        return jsonify(formatted_investors)
+        # Calculate pagination info
+        total_pages = (total_count + limit - 1) // limit
+        
+        return jsonify({
+            'data': formatted_investors,
+            'pagination': {
+                'current_page': page,
+                'total_pages': total_pages,
+                'total': total_count,
+                'per_page': limit
+            }
+        })
     
     except Exception as e:
+        print(f"Error in get_investors: {str(e)}")  # Add logging to see the actual error
         return jsonify({'error': str(e)}), 500
     finally:
         if connection:
@@ -3995,10 +4367,11 @@ def get_investor_details(current_user, investor_id):
         if not investor:
             return jsonify({'error': 'Investor not found'}), 404
         
-        # Get all projects for this investor (find by matching investor details, not just this ID)
+        # Get all projects for this investor with deal-specific investment data
+        # Each row in investors table represents a specific investor-deal relationship
         cursor.execute("""
-            SELECT DISTINCT
-                d.id,
+            SELECT 
+                d.id as deal_id,
                 d.project_name,
                 s.name as state,
                 dist.name as district,
@@ -4008,18 +4381,26 @@ def get_investor_details(current_user, investor_id):
                 d.area_unit,
                 d.status,
                 d.created_at,
-                i.investment_amount,
-                i.investment_percentage
+                i.investment_amount as deal_investment_amount,
+                i.investment_percentage as deal_investment_percentage,
+                i.id as investor_record_id,
+                i.deal_id as investor_deal_id
             FROM deals d
             INNER JOIN investors i ON d.id = i.deal_id
             LEFT JOIN states s ON d.state_id = s.id
             LEFT JOIN districts dist ON d.district_id = dist.id
-            WHERE i.investor_name = %s 
-                AND (i.mobile = %s OR i.mobile IS NULL OR %s IS NULL)
-                AND (i.email = %s OR i.email IS NULL OR %s IS NULL)
+            WHERE (i.id = %s OR i.parent_investor_id = %s OR 
+                   (i.investor_name = %s 
+                    AND (i.mobile = %s OR i.mobile IS NULL OR %s IS NULL)
+                    AND (i.email = %s OR i.email IS NULL OR %s IS NULL)
+                   ))
             ORDER BY d.created_at DESC
-        """, (investor['investor_name'], investor['mobile'], investor['mobile'], investor['email'], investor['email']))
+        """, (investor_id, investor_id, investor['investor_name'], investor['mobile'], investor['mobile'], investor['email'], investor['email']))
         projects = cursor.fetchall()
+        
+        print(f"[DEBUG] Found {len(projects)} deal-investor relationships for investor {investor_id}")
+        for i, project in enumerate(projects):
+            print(f"[DEBUG] Deal {i+1}: ID={project.get('deal_id')}, Name={project.get('project_name')}, Investment%={project.get('deal_investment_percentage')}, Amount={project.get('deal_investment_amount')}, InvestorRecordID={project.get('investor_record_id')}")
         
         # Convert datetime objects for projects
         for item in projects:
@@ -4045,71 +4426,40 @@ def create_investor(current_user):
     """Create a new investor"""
     try:
         data = request.get_json()
-        required_fields = ['deal_id', 'investor_name']
-        
-        for field in required_fields:
-            if field not in data:
-                return jsonify({'error': f'Missing required field: {field}'}), 400
+        print(f"DEBUG: Received data for investor creation: {data}")  # Debug log
         
         connection = get_db_connection()
         cursor = connection.cursor()
         
-        # Check if deal exists
-        cursor.execute("SELECT id FROM deals WHERE id = %s", (data['deal_id'],))
-        if not cursor.fetchone():
-            return jsonify({'error': 'Deal not found'}), 404
-        
-        # Normalize investment_amount -> always send a numeric (0 if empty/invalid)
-        inv_amt_raw = data.get('investment_amount')
-        if isinstance(inv_amt_raw, str):
-            inv_amt_raw = inv_amt_raw.strip()
-            if inv_amt_raw.lower() == 'null':
-                inv_amt_raw = None
-        if inv_amt_raw is None or inv_amt_raw == '':
-            investment_amount = 0
-        else:
-            try:
-                investment_amount = float(inv_amt_raw)
-            except Exception:
-                investment_amount = 0
-
-        # Normalize investment_percentage -> None if empty or invalid
-        inv_pct_raw = data.get('investment_percentage')
-        if isinstance(inv_pct_raw, str):
-            inv_pct_raw = inv_pct_raw.strip()
-            if inv_pct_raw == '':
-                investment_percentage = None
-            else:
-                try:
-                    investment_percentage = float(inv_pct_raw)
-                except Exception:
-                    investment_percentage = None
-        else:
-            investment_percentage = inv_pct_raw if inv_pct_raw is not None else None
-        
-        # Insert new investor
+        # Helper function to convert empty strings to None
+        def empty_to_none(value):
+            return None if value == '' or value is None else value
+            
         cursor.execute("""
             INSERT INTO investors (deal_id, investor_name, investment_amount, investment_percentage,
                                  mobile, email, aadhar_card, pan_card, address)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            data['deal_id'],
-            data['investor_name'],
-            investment_amount,
-            investment_percentage,
-            data.get('mobile'),
-            data.get('email'),
-            data.get('aadhar_card'),
-            data.get('pan_card'),
-            data.get('address')
+            data.get('deal_id'),
+            data.get('investor_name'),
+            0.00,  # investment_amount - default to 0 until set later
+            0.00,  # investment_percentage - default to 0 until set later
+            empty_to_none(data.get('mobile')),
+            empty_to_none(data.get('email')),
+            empty_to_none(data.get('aadhar_card')),
+            empty_to_none(data.get('pan_card')),
+            empty_to_none(data.get('address'))
         ))
         
-        connection.commit()
         investor_id = cursor.lastrowid
+        connection.commit()
         
-        return jsonify({'message': 'Investor created successfully', 'id': investor_id}), 201
+        return jsonify({'message': 'Investor created successfully', 'investor_id': investor_id})
     
     except Exception as e:
+        print(f"ERROR in create_investor: {str(e)}")  # Debug log
+        import traceback
+        traceback.print_exc()  # Print full traceback
         return jsonify({'error': str(e)}), 500
     finally:
         if connection:
@@ -4238,7 +4588,7 @@ def get_starred_investors(current_user):
             SELECT id, investor_name, mobile, email, investment_amount, 
                    investment_percentage, aadhar_card, pan_card, is_starred
             FROM investors 
-            WHERE is_starred = TRUE 
+            WHERE is_starred = TRUE AND parent_investor_id IS NULL
             ORDER BY investor_name ASC
         """)
         
@@ -4728,7 +5078,15 @@ def admin_list_users(current_user):
     try:
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT id, username, role, full_name FROM users ORDER BY id")
+        cur.execute("""
+            SELECT u.id, u.username, u.role, u.owner_id, u.investor_id,
+                   o.name as linked_owner_name,
+                   i.investor_name as linked_investor_name
+            FROM users u
+            LEFT JOIN owners o ON u.owner_id = o.id
+            LEFT JOIN investors i ON u.investor_id = i.id
+            ORDER BY u.id
+        """)
         rows = cur.fetchall() or []
         return jsonify(rows)
     except Exception as e:
@@ -4752,7 +5110,8 @@ def admin_create_user(current_user):
     username = data.get('username')
     password = data.get('password')
     role = data.get('role', 'user')
-    full_name = data.get('full_name', '')
+    owner_id = data.get('owner_id') or None  # Convert empty string to None
+    investor_id = data.get('investor_id') or None  # Convert empty string to None
 
     # sanitize role to known allowed values to avoid DB truncation or invalid enum values
     try:
@@ -4763,11 +5122,14 @@ def admin_create_user(current_user):
     if role not in allowed_roles:
         role = 'user'
 
-    # limit lengths to reasonable sizes to avoid column truncation
-    if isinstance(full_name, str):
-        full_name = full_name.strip()[:255]
-    else:
-        full_name = str(full_name)[:255]
+    # Validate that user is linked to either owner or investor, but not both
+    if owner_id and investor_id:
+        return jsonify({'error': 'User cannot be linked to both owner and investor'}), 400
+    
+    # For regular users, they must be linked to either an owner or investor
+    # Admin and auditor users can exist without being linked to anyone
+    if role == 'user' and not owner_id and not investor_id:
+        return jsonify({'error': 'Regular users must be linked to an owner or investor'}), 400
 
     if not username or not password:
         return jsonify({'error': 'username and password required'}), 400
@@ -4782,7 +5144,8 @@ def admin_create_user(current_user):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('INSERT INTO users (username, password, role, full_name) VALUES (%s, %s, %s, %s)', (username, hashed, role, full_name))
+        cur.execute('INSERT INTO users (username, password, role, full_name, owner_id, investor_id) VALUES (%s, %s, %s, %s, %s, %s)', 
+                   (username, hashed, role, username, owner_id, investor_id))
         conn.commit()
         return jsonify({'message': 'user created'}), 201
     except mysql.connector.IntegrityError as e:
@@ -4813,8 +5176,13 @@ def admin_update_user(current_user, user_id):
 
     data = request.get_json() or {}
     role = data.get('role')
-    full_name = data.get('full_name')
+    owner_id = data.get('owner_id')
+    investor_id = data.get('investor_id')
     password = data.get('password')
+
+    # Validate that user is linked to either owner or investor, but not both
+    if owner_id and investor_id:
+        return jsonify({'error': 'User cannot be linked to both owner and investor'}), 400
 
     updates = []
     params = []
@@ -4828,13 +5196,12 @@ def admin_update_user(current_user, user_id):
             r = 'user'
         updates.append('role = %s')
         params.append(r)
-    if full_name is not None:
-        if isinstance(full_name, str):
-            fn = full_name.strip()[:255]
-        else:
-            fn = str(full_name)[:255]
-        updates.append('full_name = %s')
-        params.append(fn)
+    if owner_id is not None:
+        updates.append('owner_id = %s')
+        params.append(owner_id if owner_id else None)
+    if investor_id is not None:
+        updates.append('investor_id = %s')
+        params.append(investor_id if investor_id else None)
     if password is not None:
         try:
             hashed = generate_password_hash(password)
@@ -6143,103 +6510,6 @@ def update_owner_percentage_shares(current_user, deal_id):
         if conn:
             conn.close()
 
-@app.route('/api/deals/<int:deal_id>/investors', methods=['POST'])
-@token_required
-def add_investor_to_deal(current_user, deal_id):
-    """Add an existing investor to a deal"""
-    try:
-        print(f"DEBUG: Adding investor to deal {deal_id}")
-        data = request.get_json()
-        print(f"DEBUG: Request data: {data}")
-        
-        investor_id = data.get('investor_id')
-        investment_percentage = data.get('investment_percentage')
-        
-        print(f"DEBUG: investor_id={investor_id}, investment_percentage={investment_percentage}")
-        
-        if not investor_id:
-            print("DEBUG: Missing investor_id")
-            return jsonify({'error': 'investor_id is required'}), 400
-            
-        conn = get_db_connection()
-        if not conn:
-            print("DEBUG: Database connection failed")
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        cursor = conn.cursor(dictionary=True)
-        
-        # Check if deal exists
-        print(f"DEBUG: Checking if deal {deal_id} exists")
-        cursor.execute("SELECT id FROM deals WHERE id = %s", (deal_id,))
-        deal = cursor.fetchone()
-        if not deal:
-            print(f"DEBUG: Deal {deal_id} not found")
-            return jsonify({'error': 'Deal not found'}), 404
-        print(f"DEBUG: Deal {deal_id} found")
-            
-        # Check if investor exists
-        print(f"DEBUG: Checking if investor {investor_id} exists")
-        cursor.execute("SELECT * FROM investors WHERE id = %s", (investor_id,))
-        investor = cursor.fetchone()
-        if not investor:
-            print(f"DEBUG: Investor {investor_id} not found")
-            return jsonify({'error': 'Investor not found'}), 404
-        print(f"DEBUG: Investor {investor_id} found: {investor['investor_name']}")
-            
-        # Check if investor with same details is already part of this deal
-        print(f"DEBUG: Checking for duplicate investor in deal {deal_id}")
-        cursor.execute("""
-            SELECT i1.id FROM investors i1 
-            JOIN investors i2 ON i2.id = %s 
-            WHERE i1.deal_id = %s 
-            AND i1.investor_name = i2.investor_name
-            AND (i1.mobile = i2.mobile OR i1.email = i2.email)
-        """, (investor_id, deal_id))
-        duplicate = cursor.fetchone()
-        if duplicate:
-            print(f"DEBUG: Duplicate investor found: {duplicate['id']}")
-            return jsonify({'error': 'Investor is already part of this deal'}), 409
-        print("DEBUG: No duplicate found, proceeding with insert")
-            
-        # Create a new investor record for this deal (copying from the main investor record)
-        insert_query = """
-            INSERT INTO investors (deal_id, investor_name, investment_amount, investment_percentage,
-                                 mobile, email, aadhar_card, pan_card, address, bank_name, 
-                                 account_number, created_at)
-            SELECT %s, investor_name, investment_amount, %s, mobile, email, aadhar_card, 
-                   pan_card, address, bank_name, account_number, NOW()
-            FROM investors WHERE id = %s
-        """
-        
-        print(f"DEBUG: Executing insert query with params: deal_id={deal_id}, percentage={investment_percentage}, investor_id={investor_id}")
-        cursor.execute(insert_query, (deal_id, investment_percentage, investor_id))
-        new_investor_id = cursor.lastrowid
-        print(f"DEBUG: New investor record created with ID: {new_investor_id}")
-        
-        print(f"DEBUG: Committing transaction")
-        conn.commit()
-        print(f"DEBUG: Transaction committed successfully")
-        
-        # Get the created investor record
-        cursor.execute("SELECT * FROM investors WHERE id = %s", (new_investor_id,))
-        created_investor = cursor.fetchone()
-        print(f"DEBUG: Retrieved created investor: {created_investor}")
-        
-        return jsonify({
-            'message': 'Investor added to deal successfully',
-            'investor': created_investor
-        }), 201
-        
-    except Exception as e:
-        print(f"ERROR adding investor to deal: {e}")
-        print(f"ERROR type: {type(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Failed to add investor to deal: {str(e)}'}), 500
-    finally:
-        if conn:
-            conn.close()
-
 @app.route('/api/test-db', methods=['GET'])
 def test_db_connection():
     """Test database connection"""
@@ -6333,6 +6603,7 @@ def get_available_investors(current_user, deal_id):
             WHERE i1.deal_id != %s 
             AND i1.investor_name IS NOT NULL
             AND i1.investor_name != ''
+            AND i1.parent_investor_id IS NULL
             ORDER BY i1.investor_name
         """
         

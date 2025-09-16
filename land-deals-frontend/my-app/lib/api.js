@@ -162,6 +162,12 @@ export const dealAPI = {
     clearCache(`deals_${dealId}`)
     return response
   },
+  deleteBuyer: async (dealId, buyerId) => {
+    const response = await api.delete(`/deals/${dealId}/buyers/${buyerId}`)
+    // Clear cache for this deal to ensure fresh data is fetched
+    clearCache(`deals_${dealId}`)
+    return response
+  },
   
   // Audit Logs
   getLogs: (dealId) => api.get(`/deals/${dealId}/logs`),
@@ -180,10 +186,12 @@ export const dealAPI = {
 
 export const investorsAPI = {
   getAll: () => api.get('/investors'),
+  getStarred: () => api.get('/investors/starred'),
   getById: (id) => api.get(`/investors/${id}`),
   create: (data) => api.post('/investors', data),
   update: (id, data) => api.put(`/investors/${id}`, data),
   delete: (id) => api.delete(`/investors/${id}`),
+  star: (id, starred = true) => api.post(`/investors/${id}/star`, { starred }),
   
   // Deal-Investor Association
   addToDeal: (dealId, investorData) => api.post(`/deals/${dealId}/investors`, investorData),

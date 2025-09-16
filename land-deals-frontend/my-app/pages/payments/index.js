@@ -56,10 +56,13 @@ export default function PaymentsIndex() {
         ownersAPI.getAll(),
         investorsAPI.getAll()
       ])
-      setOwners(ownersResponse.data || [])
-      setInvestors(investorsResponse.data || [])
+      setOwners(Array.isArray(ownersResponse.data) ? ownersResponse.data : [])
+      setInvestors(Array.isArray(investorsResponse.data) ? investorsResponse.data : [])
     } catch (error) {
       console.error('Failed to load owners and investors:', error)
+      // Ensure we always have arrays even on error
+      setOwners([])
+      setInvestors([])
       // Don't show error toast as this is supplementary data
     }
   }, [])
@@ -83,12 +86,12 @@ export default function PaymentsIndex() {
       const [type, id] = value.split('_');
       const numericId = parseInt(id);
       
-      if (type === 'investor' && investors) {
+      if (type === 'investor' && Array.isArray(investors)) {
         const investor = investors.find(inv => inv.id === numericId);
         return investor ? investor.investor_name : value;
       }
       
-      if (type === 'owner' && owners) {
+      if (type === 'owner' && Array.isArray(owners)) {
         const owner = owners.find(own => own.id === numericId);
         return owner ? owner.name : value;
       }

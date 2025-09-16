@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="200" cy="200" r="190" fill="#f8f9fa" stroke="#e2e8f0" stroke-width="2"/>
+  
+  <!-- Sun -->
+  <circle cx="320" cy="120" r="35" fill="#fbbf24" opacity="0.9"/>
+  
+  <!-- House -->
+  <g transform="translate(140, 160)">
+    <!-- House base -->
+    <rect x="0" y="40" width="60" height="40" fill="#22c55e"/>
+    <!-- Roof -->
+    <polygon points="0,40 30,10 60,40" fill="#16a34a"/>
+    <!-- Roof accent -->
+    <polygon points="15,40 45,20 60,40" fill="#0ea5e9"/>
+    <!-- Windows -->
+    <rect x="10" y="50" width="8" height="8" fill="white"/>
+    <rect x="20" y="50" width="8" height="8" fill="white"/>
+    <rect x="35" y="50" width="8" height="8" fill="white"/>
+    <rect x="45" y="50" width="8" height="8" fill="white"/>
+  </g>
+  
+  <!-- Growth Arrow -->
+  <g transform="translate(220, 140)">
+    <path d="M0,60 Q30,40 60,20 L50,10 L70,20 L60,30 Z" fill="#16a34a" stroke="#15803d" stroke-width="2"/>
+  </g>
+  
+  <!-- Land/Ground -->
+  <path d="M80,280 Q200,260 320,280 L320,320 Q200,300 80,320 Z" fill="#a16207"/>
+  <path d="M80,280 Q200,250 320,280 L320,290 Q200,270 80,290 Z" fill="#16a34a"/>
+</svg>

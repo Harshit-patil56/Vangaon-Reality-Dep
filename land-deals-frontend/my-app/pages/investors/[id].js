@@ -24,9 +24,22 @@ export default function InvestorDetails() {
       }
       
       console.log(`Found investor ${data.investor.investor_name} with ${data.projects?.length || 0} associated projects`);
+      console.log('Project data from backend:', data.projects);
+      
+      // Use deal-specific investment data directly from backend
+      // Each project now contains the specific investment amount and percentage for this investor in that deal
+      const projectsWithDealSpecificData = (data.projects || []).map((project) => {
+        return {
+          ...project,
+          id: project.deal_id, // Use deal_id as the project ID
+          // Use deal-specific investment data
+          investment_amount: parseFloat(project.deal_investment_amount) || 0,
+          investment_percentage: parseFloat(project.deal_investment_percentage) || 0
+        };
+      });
       
       setInvestor(data.investor);
-      setProjects(data.projects || []);
+      setProjects(projectsWithDealSpecificData);
     } catch (error) {
       console.error('Error fetching investor details:', error);
       toast.error('Failed to load investor details');
@@ -158,6 +171,48 @@ export default function InvestorDetails() {
           </div>
         </div>
 
+        {/* Investment Summary */}
+        <div style={{
+          backgroundColor: 'white',
+          border: '1px solid #d9d9d9',
+          borderRadius: '8px',
+          padding: '24px',
+          marginBottom: '20px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+        }}>
+          <h2 style={{
+            fontSize: '18px',
+            fontWeight: '600',
+            marginBottom: '16px',
+            borderBottom: '1px solid #f0f0f0',
+            paddingBottom: '8px',
+            color: '#262626'
+          }}>
+            Investment Summary
+          </h2>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
+            <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1890ff', marginBottom: '4px' }}>
+                ₹{projects.reduce((total, project) => total + (project.investment_amount || 0), 0).toLocaleString()}
+              </div>
+              <div style={{ fontSize: '14px', color: '#666' }}>Total Investment Amount</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff4d4f', marginBottom: '4px' }}>
+                ₹{projects.reduce((total, project) => total + (project.investment_amount || 0), 0).toLocaleString()}
+              </div>
+              <div style={{ fontSize: '14px', color: '#666' }}>Pending Amount</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fa8c16', marginBottom: '4px' }}>
+                {projects.length}
+              </div>
+              <div style={{ fontSize: '14px', color: '#666' }}>Active Projects</div>
+            </div>
+          </div>
+        </div>
+
         {/* Associated Projects */}
         <div style={{
           backgroundColor: 'white',
@@ -216,7 +271,7 @@ export default function InvestorDetails() {
                       border: '1px solid #f0f0f0',
                       fontWeight: '600'
                     }}>
-                      Investment Amount
+                      Total Invested
                     </th>
                     <th style={{ 
                       padding: '12px', 
@@ -262,10 +317,20 @@ export default function InvestorDetails() {
                         {project.total_area} {project.area_unit}
                       </td>
                       <td style={{ padding: '12px', border: '1px solid #f0f0f0' }}>
-                        {project.investment_amount ? `₹${project.investment_amount.toLocaleString()}` : 'N/A'}
+                        <div>
+                          <strong>₹{(project.investment_amount || 0).toLocaleString()}</strong>
+                          <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                            Deal-specific amount
+                          </div>
+                        </div>
                       </td>
                       <td style={{ padding: '12px', border: '1px solid #f0f0f0' }}>
-                        {project.investment_percentage ? `${project.investment_percentage}%` : 'N/A'}
+                        <div>
+                          <strong>{(project.investment_percentage || 0).toFixed(2)}%</strong>
+                          <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                            Deal-specific percentage
+                          </div>
+                        </div>
                       </td>
                       <td style={{ padding: '12px', border: '1px solid #f0f0f0' }}>
                         <span style={{

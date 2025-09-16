@@ -9,17 +9,29 @@ import os
 from pathlib import Path
 
 # Database configuration (same as in app.py)
-# It's recommended to use environment variables for sensitive data
+# Use environment variables for all database configuration
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 DB_CONFIG = {
-    'host': 'YOUR_DATABASE_HOST',
-    'port': 17231,
-    'user': 'avnadmin',
-    'password': os.environ.get('DB_PASSWORD', 'YOUR_PASSWORD'),
-    'database': 'land_deals_db',
-    'ssl_ca': os.path.join(os.path.dirname(__file__), 'ca-certificate.pem'),
-    'ssl_verify_cert': True,
-    'ssl_verify_identity': True
+    'host': os.environ.get('DB_HOST'),
+    'port': int(os.environ.get('DB_PORT', 3306)),
+    'user': os.environ.get('DB_USER'),
+    'password': os.environ.get('DB_PASSWORD'),
+    'database': os.environ.get('DB_NAME'),
 }
+
+# Add SSL configuration only if SSL certificate exists (for cloud databases)
+ssl_ca_path = os.path.join(os.path.dirname(__file__), 'ca-certificate.pem')
+if os.path.exists(ssl_ca_path) and os.environ.get('DB_HOST') and 'aivencloud.com' in os.environ.get('DB_HOST', ''):
+    DB_CONFIG.update({
+        'ssl_ca': ssl_ca_path,
+        'ssl_verify_cert': True,
+        'ssl_verify_identity': True
+    })
 
 def init_database():
     """Initialize the database with required tables"""

@@ -1,0 +1,157 @@
+{
+  "tech_stack": [
+    "JavaScript",
+    "Python",
+    "Next.js",
+    "React",
+    "Flask",
+    "MySQL",
+    "Tailwind CSS",
+    "JWT Authentication",
+    "Axios",
+    "Node.js"
+  ],
+  "features": [
+    {
+      "name": "User Authentication System",
+      "description": "Complete JWT-based authentication with login, logout, and role-based access control (admin, auditor, user roles)",
+      "files": [
+        "land-deals-frontend/my-app/lib/auth.js",
+        "land-deals-frontend/my-app/pages/login.js",
+        "land-deals-backend/app.py"
+      ]
+    },
+    {
+      "name": "Role-Based Permission System",
+      "description": "Comprehensive permission system controlling access to different features based on user roles with fine-grained permissions",
+      "files": [
+        "land-deals-frontend/my-app/lib/permissions.js",
+        "land-deals-backend/app.py"
+      ]
+    },
+    {
+      "name": "Admin User Management",
+      "description": "Admin panel for creating, editing, and managing users with role assignment and linking to owners/investors",
+      "files": [
+        "land-deals-frontend/my-app/pages/admin/users.js",
+        "land-deals-frontend/my-app/pages/admin/index.js",
+        "land-deals-backend/app.py"
+      ]
+    },
+    {
+      "name": "Dashboard and Navigation",
+      "description": "Main dashboard showing deals overview with navigation bar and role-based menu options",
+      "files": [
+        "land-deals-frontend/my-app/pages/dashboard.js",
+        "land-deals-frontend/my-app/components/layout/Navbar.js"
+      ]
+    },
+    {
+      "name": "Deals Management System",
+      "description": "Core functionality for creating, viewing, editing, and managing land deals with status tracking",
+      "files": [
+        "land-deals-frontend/my-app/pages/deals/[id].js",
+        "land-deals-frontend/my-app/pages/dashboard.js",
+        "land-deals-backend/app.py",
+        "land-deals-backend/blueprints/deals.py"
+      ]
+    },
+    {
+      "name": "Owners Management",
+      "description": "System for managing property owners with contact details, documents, and star rating feature",
+      "files": [
+        "land-deals-frontend/my-app/pages/owners.js",
+        "land-deals-frontend/my-app/pages/owners/[id].js",
+        "land-deals-frontend/my-app/pages/owners/new.js",
+        "land-deals-backend/app.py"
+      ]
+    },
+    {
+      "name": "Investors Management",
+      "description": "Complete investor management system with investment tracking, star rating, and deal associations",
+      "files": [
+        "land-deals-frontend/my-app/pages/investors.js",
+        "land-deals-frontend/my-app/pages/investors/[id].js",
+        "land-deals-frontend/my-app/pages/investors/new.js",
+        "land-deals-frontend/my-app/pages/investors/new_final.js",
+        "land-deals-backend/app.py",
+        "land-deals-backend/blueprints/investors.py"
+      ]
+    },
+    {
+      "name": "Payments System with Installments",
+      "description": "Advanced payment management system supporting installments, multiple payment types, and financial tracking",
+      "files": [
+        "land-deals-frontend/my-app/pages/deals/[id].js",
+        "land-deals-frontend/my-app/pages/payments/index.js",
+        "land-deals-frontend/my-app/pages/deals/payments.js",
+        "land-deals-backend/app.py",
+        "land-deals-backend/payments_cross_deal_endpoint.py"
+      ]
+    },
+    {
+      "name": "Financial Reporting and Analytics",
+      "description": "Profit/loss analysis, payment ledgers, and financial reports with charts and export capabilities",
+      "files": [
+        "land-deals-frontend/my-app/pages/deals/[id].js",
+        "land-deals-frontend/my-app/pages/reports/index.js",
+        "land-deals-backend/app.py"
+      ]
+    },
+    {
+      "name": "Document Management",
+      "description": "File upload and management system for payment proofs, contracts, and legal documents",
+      "files": [
+        "land-deals-backend/document_manager.py",
+        "land-deals-backend/app.py",
+        "land-deals-frontend/my-app/pages/deals/[id].js"
+      ]
+    },
+    {
+      "name": "Star Rating System",
+      "description": "Gmail-style star system for marking important owners and investors for quick access",
+      "files": [
+        "land-deals-frontend/my-app/pages/owners.js",
+        "land-deals-frontend/my-app/pages/investors.js",
+        "land-deals-frontend/my-app/pages/admin/users.js",
+        "land-deals-backend/app.py"
+      ]
+    },
+    {
+      "name": "Database Schema and Migrations",
+      "description": "Complete MySQL database schema with migration system for owners, investors, deals, payments, and users",
+      "files": [
+        "land-deals-backend/init_schema.sql",
+        "land-deals-backend/migrations/20250915_add_user_links.sql",
+        "land-deals-backend/migrations/20250906_add_installment_fields.sql",
+        "land-deals-backend/sql/create_payments_table.sql"
+      ]
+    },
+    {
+      "name": "API Integration Layer",
+      "description": "Axios-based API client with authentication interceptors, error handling, and caching",
+      "files": [
+        "land-deals-frontend/my-app/lib/api.js",
+        "land-deals-backend/app.py"
+      ]
+    },
+    {
+      "name": "UI Components and Styling",
+      "description": "Reusable UI components with Tailwind CSS styling including modals, forms, and navigation",
+      "files": [
+        "land-deals-frontend/my-app/components/layout/Navbar.js",
+        "land-deals-frontend/my-app/components/common/ConfirmModal.js",
+        "land-deals-frontend/my-app/app/globals.css"
+      ]
+    },
+    {
+      "name": "Data Export and PDF Generation",
+      "description": "Export functionality for payments, reports, and financial data with PDF generation capabilities",
+      "files": [
+        "land-deals-frontend/my-app/pages/deals/[id].js",
+        "land-deals-frontend/my-app/pages/reports/index.js",
+        "land-deals-backend/app.py"
+      ]
+    }
+  ]
+}

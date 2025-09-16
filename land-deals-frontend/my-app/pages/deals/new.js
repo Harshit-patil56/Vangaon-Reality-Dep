@@ -68,11 +68,11 @@ export default function NewDeal() {
   // Fetch existing investors
   const fetchExistingInvestors = async () => {
     try {
-      // Create a simple API call to get investors using proper API method
-      const response = await investorsAPI.getAll();
+      // Create a simple API call to get starred investors using proper API method
+      const response = await investorsAPI.getStarred();
       setExistingInvestors(response.data);
     } catch (error) {
-      console.error('Failed to fetch existing investors:', error);
+      console.error('Failed to fetch starred investors:', error);
       console.error('Error message:', error.message);
     }
   };
@@ -946,22 +946,22 @@ export default function NewDeal() {
                               onChange={() => handleInvestorTypeChange(investorIdx, 'existing')}
                               className="mr-2 w-3 h-3 text-black"
                             />
-                            <span className="text-xs font-medium text-gray-900">Existing Investor</span>
+                            <span className="text-xs font-medium text-gray-900">Starred Investor</span>
                           </div>
-                          <p className="text-xs text-gray-600 mt-1">Select from {existingInvestors.length} existing investors</p>
+                          <p className="text-xs text-gray-600 mt-1">Select from {existingInvestors.length} starred investors</p>
                         </div>
                       </div>
                       
                       {/* Existing Investor Dropdown */}
                       {investorSelectionTypes[investorIdx] === 'existing' && (
                         <div className="mt-2">
-                          <span className="text-xs font-medium text-gray-700 mb-1 block">Select Existing Investor</span>
+                          <span className="text-xs font-medium text-gray-700 mb-1 block">Select Starred Investor</span>
                           <select
                             value={selectedExistingInvestors[investorIdx] || ''}
                             onChange={(e) => handleExistingInvestorSelect(investorIdx, e.target.value)}
                             className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
                           >
-                            <option value="">Choose an existing investor</option>
+                            <option value="">Choose a starred investor</option>
                             {existingInvestors.map((existingInvestor) => (
                               <option key={existingInvestor.id} value={existingInvestor.id}>
                                 {existingInvestor.investor_name} - {existingInvestor.mobile || 'No mobile'}
@@ -977,7 +977,7 @@ export default function NewDeal() {
                       <h4 className="text-sm font-medium text-gray-700 mb-3">
                         Investor Information
                         {investorSelectionTypes[investorIdx] === 'existing' && (
-                          <span className="ml-2 text-xs text-slate-800 bg-white px-2 py-1 rounded border">(From Existing Investor)</span>
+                          <span className="ml-2 text-xs text-slate-800 bg-white px-2 py-1 rounded border">(From Starred Investor)</span>
                         )}
                       </h4>
                       
@@ -1158,7 +1158,6 @@ function AdditionalDocsField({ additionalDocs, onAdd, onRemove, onUpdateName, on
                 onChange={(e) => onUpdateName(docIndex, e.target.value)}
                 placeholder="Enter document name"
                 className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded bg-white focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
-                required
               />
               {additionalDocs.length > 1 && (
                 <button

@@ -15,10 +15,12 @@ export default function NewInvestor() {
     deal_id: ''
   });
   const [deals, setDeals] = useState([]);
+  const [currentDeal, setCurrentDeal] = useState(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [user, setUser] = useState(null);
   const router = useRouter();
+  const { returnTo, section } = router.query;
 
   useEffect(() => {
     const currentUser = getUser();
@@ -27,18 +29,62 @@ export default function NewInvestor() {
       return;
     }
     setUser(currentUser);
-    fetchDeals();
-  }, [router]);
 
-  const fetchDeals = async () => {
-    try {
-      const response = await api.get('/deals');
-      setDeals(response.data || []);
-    } catch (error) {
-      console.error('Error fetching deals:', error);
-      toast.error('Failed to fetch deals');
+    // Extract deal ID from returnTo URL if coming from a deal page
+    let dealIdFromUrl = null;
+    if (returnTo && returnTo.includes('/deals/')) {
+      const match = returnTo.match(/\/deals\/(\d+)/);
+      if (match) {
+        dealIdFromUrl = match[1];
+      }
     }
-  };
+
+    // inline fetchDeals to avoid missing dependency warnings
+    const fetchDealsInner = async () => {
+      try {
+        if (dealIdFromUrl) {
+          // If we have a deal ID from URL, fetch only that deal and set it automatically
+          const dealResponse = await api.get(`/deals/${dealIdFromUrl}`);
+          console.log('Deal response:', dealResponse.data); // Debug log
+          
+          // Handle different response structures
+          let dealData = dealResponse.data;
+          if (dealData.deal) {
+            // If the response has a nested 'deal' object
+            dealData = dealData.deal;
+          }
+          
+          setCurrentDeal(dealData);
+          setForm(prev => ({ ...prev, deal_id: dealIdFromUrl }));
+        } else {
+          // Otherwise fetch all deals for the dropdown
+          const response = await api.get('/deals');
+          setDeals(response.data || []);
+        }
+      } catch (error) {
+        console.error('Error fetching deals:', error);
+        if (dealIdFromUrl) {
+          toast.error('Failed to fetch deal information');
+        } else {
+          toast.error('Failed to fetch deals');
+        }
+      }
+    };
+
+    fetchDealsInner();
+  }, [router, returnTo]);
+
+  // Debug effect to log currentDeal
+  useEffect(() => {
+    if (currentDeal) {
+      console.log('Current deal set:', currentDeal);
+      console.log('Available name fields:', {
+        project_name: currentDeal.project_name,
+        title: currentDeal.title,
+        name: currentDeal.name
+      });
+    }
+  }, [currentDeal]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -96,7 +142,17 @@ export default function NewInvestor() {
       };
       await api.post('/investors', formData);
       toast.success('Investor created successfully');
-      router.push('/investors');
+      
+      // Navigate back to where user came from
+      if (returnTo) {
+        if (section) {
+          router.push(`${returnTo}?section=${section}`);
+        } else {
+          router.push(returnTo);
+        }
+      } else {
+        router.push('/investors');
+      }
     } catch (error) {
       console.error('Error creating investor:', error);
       if (error.response?.data?.error) {
@@ -121,14 +177,24 @@ export default function NewInvestor() {
       
       <div className="max-w-2xl mx-auto py-8 px-4">
         <div className="mb-8">
-          <Link href="/investors" className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4">
+          <Link 
+            href={returnTo ? (section ? `${returnTo}?section=${section}` : returnTo) : "/investors"} 
+            className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4"
+          >
             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            Back to Investors
+            {returnTo ? 'Back to Deal' : 'Back to Investors'}
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900">Add New Investor</h1>
-          <p className="text-gray-600 mt-2">Create a new investor profile with basic information</p>
+          <h1 className="text-3xl font-bold text-gray-900">
+            {currentDeal ? `Add Investor to ${currentDeal.project_name || currentDeal.title || currentDeal.name || 'Selected Project'}` : 'Add New Investor'}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {currentDeal 
+              ? `Create a new investor profile for this project`
+              : 'Create a new investor profile with basic information'
+            }
+          </p>
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -191,22 +257,35 @@ export default function NewInvestor() {
                   <label htmlFor="deal_id" className="block text-sm font-medium text-gray-700 mb-2">
                     Project *
                   </label>
-                  <select
-                    id="deal_id"
-                    name="deal_id"
-                    value={form.deal_id}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                      errors.deal_id ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                    }`}
-                  >
-                    <option value="">Select project</option>
-                    {deals.map((deal) => (
-                      <option key={deal.id} value={deal.id}>
-                        {deal.title || deal.project_name}
-                      </option>
-                    ))}
-                  </select>
+                  {currentDeal ? (
+                    <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                      <div className="text-sm font-medium text-black">
+                        {currentDeal.project_name || currentDeal.title || currentDeal.name || 'Project Name'}
+                      </div>
+                      {currentDeal.survey_number && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Survey No: {currentDeal.survey_number}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      id="deal_id"
+                      name="deal_id"
+                      value={form.deal_id}
+                      onChange={handleChange}
+                      className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                        errors.deal_id ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                      }`}
+                    >
+                      <option value="">Select project</option>
+                      {deals.map((deal) => (
+                        <option key={deal.id} value={deal.id}>
+                          {deal.title || deal.project_name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {errors.deal_id && (
                     <p className="mt-1 text-sm text-red-600">{errors.deal_id}</p>
                   )}
@@ -259,7 +338,7 @@ export default function NewInvestor() {
 
               <div className="flex justify-end pt-6 border-t border-gray-200">
                 <Link
-                  href="/investors"
+                  href={returnTo ? (section ? `${returnTo}?section=${section}` : returnTo) : "/investors"}
                   className="mr-4 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   Cancel

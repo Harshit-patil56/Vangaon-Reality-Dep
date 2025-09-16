@@ -15,16 +15,24 @@ load_dotenv()
 def get_db_connection():
     """Get database connection using environment variables"""
     try:
-        connection = mysql.connector.connect(
-            host=os.environ.get('DB_HOST', 'YOUR_DATABASE_HOST'),
-            port=int(os.environ.get('DB_PORT', 17231)),
-            user=os.environ.get('DB_USER', 'avnadmin'),
-            password=os.environ.get('DB_PASSWORD'),
-            database=os.environ.get('DB_NAME', 'land_deals_db'),
-            ssl_ca=os.path.join(os.path.dirname(__file__), 'ca-certificate.pem'),
-            ssl_verify_cert=True,
-            ssl_verify_identity=True
-        )
+        db_config = {
+            'host': os.environ.get('DB_HOST'),
+            'port': int(os.environ.get('DB_PORT', 3306)),
+            'user': os.environ.get('DB_USER'),
+            'password': os.environ.get('DB_PASSWORD'),
+            'database': os.environ.get('DB_NAME'),
+        }
+        
+        # Add SSL configuration only if SSL certificate exists (for cloud databases)
+        ssl_ca_path = os.path.join(os.path.dirname(__file__), 'ca-certificate.pem')
+        if os.path.exists(ssl_ca_path) and os.environ.get('DB_HOST') and 'aivencloud.com' in os.environ.get('DB_HOST', ''):
+            db_config.update({
+                'ssl_ca': ssl_ca_path,
+                'ssl_verify_cert': True,
+                'ssl_verify_identity': True
+            })
+        
+        connection = mysql.connector.connect(**db_config)
         return connection
     except Error as e:
         print(f"Error connecting to database: {e}")

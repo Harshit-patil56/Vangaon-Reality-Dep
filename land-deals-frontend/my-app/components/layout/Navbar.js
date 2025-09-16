@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Menu, X, User, LogOut } from "lucide-react";
 import { hasPermission, PERMISSIONS } from "../../lib/permissions";
 
@@ -11,14 +12,17 @@ export default function Navbar({ user, onLogout }) {
       <div className="px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center shadow-sm">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
+            <div className="w-10 h-10 flex items-center justify-center">
+              <Image 
+                src="/vangaon-logo.svg" 
+                alt="Vangaon Reality Logo" 
+                width={40}
+                height={40}
+                className="object-contain"
+              />
             </div>
             <div>
-              <span className="font-bold text-xl text-slate-900">Property Hub</span>
-              <p className="text-xs text-slate-600 hidden sm:block">Management System</p>
+              <span className="font-bold text-xl text-slate-900">Vangaon Reality</span>
             </div>
           </div>
 

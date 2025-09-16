@@ -6,14 +6,15 @@ export default function ConfirmModal({
   isOpen, 
   onClose, 
   onConfirm, 
-  title, 
-  message, 
-  confirmText = 'Confirm', 
-  cancelText = 'Cancel',
-  confirmButtonClass = 'bg-slate-600 hover:bg-slate-700',
-  isDestructive = false 
+  title = "Confirm Action", 
+  message = "Are you sure you want to continue?",
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  isDestructive = false,
+  confirmButtonClass = "bg-slate-600 hover:bg-slate-700"
 }) {
   const [mounted, setMounted] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -44,6 +45,21 @@ export default function ConfirmModal({
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) {
       onClose()
+    }
+  }
+
+  const handleConfirm = async () => {
+    if (isLoading) return // Prevent double-clicks
+    
+    try {
+      setIsLoading(true)
+      await onConfirm()
+      onClose()
+    } catch (error) {
+      // Error will be handled by the calling component
+      console.error('Error in confirm action:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -80,18 +96,24 @@ export default function ConfirmModal({
           <div className="flex justify-end space-x-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-colors duration-200"
+              disabled={isLoading}
+              className={`px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-colors duration-200 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {cancelText}
             </button>
             <button
-              onClick={() => {
-                onConfirm()
-                onClose()
-              }}
-              className={`px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 ${buttonClass}`}
+              onClick={handleConfirm}
+              disabled={isLoading}
+              className={`px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 ${buttonClass} ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              {confirmText}
+              {isLoading ? (
+                <div className="flex items-center">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  {confirmText}...
+                </div>
+              ) : (
+                confirmText
+              )}
             </button>
           </div>
         </div>

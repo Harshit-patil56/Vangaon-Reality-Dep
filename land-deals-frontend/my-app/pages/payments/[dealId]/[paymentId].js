@@ -9,25 +9,28 @@ import Navbar from '../../../components/layout/Navbar'
 import Link from 'next/link'
 
 // InstallmentTimeline Component
-function InstallmentTimeline({ dealId, paymentId, currentInstallment, totalInstallments, parentAmount }) {
+function InstallmentTimeline({ dealId, paymentId, currentInstallment, totalInstallments }) {
   const [installments, setInstallments] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchInstallments = async () => {
       try {
-        const response = await fetch(`/api/payments/${dealId}/${paymentId}/installments`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        })
+        // Use the standard payments API instead of a separate installments endpoint
+        const response = await paymentsAPI.listByDeal(dealId)
         
-        if (response.ok) {
-          const data = await response.json()
-          setInstallments(data.installments || [])
+        if (response && response.data) {
+          // Filter installments related to this parent payment
+          const relatedInstallments = response.data.filter(p => 
+            p.parent_payment_id === parseInt(paymentId) || 
+            p.id === parseInt(paymentId)
+          ).sort((a, b) => (a.installment_number || 0) - (b.installment_number || 0))
+          
+          setInstallments(relatedInstallments || [])
         }
       } catch (error) {
         console.error('Failed to fetch installments:', error)
+        // Don't show error toast for installments as it's not critical
       } finally {
         setLoading(false)
       }
@@ -70,10 +73,9 @@ function InstallmentTimeline({ dealId, paymentId, currentInstallment, totalInsta
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {installments.map((installment, index) => {
+        {installments.map((installment) => {
           const isCurrent = installment.installment_number === currentInstallment
           const isPaid = installment.status === 'completed'
-          const isPending = installment.status === 'pending'
           const isOverdue = installment.status === 'overdue'
           
           return (
@@ -168,15 +170,18 @@ export default function PaymentDetail() {
         ownersAPI.getAll(),
         investorsAPI.getAll()
       ])
-      setOwners(ownersResponse.data || [])
-      setInvestors(investorsResponse.data || [])
+      setOwners(Array.isArray(ownersResponse.data) ? ownersResponse.data : [])
+      setInvestors(Array.isArray(investorsResponse.data) ? investorsResponse.data : [])
     } catch (error) {
       console.error('Failed to load owners and investors:', error)
+      // Ensure we always have arrays even on error
+      setOwners([])
+      setInvestors([])
       // Don't show error toast as this is supplementary data
     }
   }, [])
 
-  // Function to get display name from payment data
+  // Function to get display name from payment data - enhanced for consistency
   const getPaymentDisplayName = useCallback((payment, field) => {
     // Check if we have the new name fields first
     if (field === 'paid_by' && payment.paid_by_name) {
@@ -188,25 +193,58 @@ export default function PaymentDetail() {
     
     // Fallback to original field but clean up ID format
     const value = payment[field];
-    if (!value) return 'N/A';
+    if (!value) return 'Not specified';
     
     // If it's in ID format (e.g., "investor_123"), extract the name from data
     if (value.includes('_')) {
       const [type, id] = value.split('_');
       const numericId = parseInt(id);
       
-      if (type === 'investor' && investors) {
+      if (type === 'investor' && Array.isArray(investors)) {
         const investor = investors.find(inv => inv.id === numericId);
-        return investor ? investor.investor_name : value;
+        if (investor) {
+          return (
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">Investor</span>
+              <span>{investor.investor_name}</span>
+            </div>
+          );
+        }
       }
       
-      if (type === 'owner' && owners) {
+      if (type === 'owner' && Array.isArray(owners)) {
         const owner = owners.find(own => own.id === numericId);
-        return owner ? owner.name : value;
+        if (owner) {
+          return (
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">Owner</span>
+              <span>{owner.name}</span>
+            </div>
+          );
+        }
+      }
+      
+      if (type === 'buyer' && Array.isArray(owners)) {
+        // Note: buyers might be stored in owners table or separate buyers table
+        const buyer = owners.find(own => own.id === numericId);
+        if (buyer) {
+          return (
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">Buyer</span>
+              <span>{buyer.name}</span>
+            </div>
+          );
+        }
       }
     }
     
-    return value;
+    // Clean up any role prefixes for display
+    const cleanValue = value
+      .replace(/^(Owner|Investor|Buyer)\s*-\s*/i, '')
+      .replace(/^(Owner|Investor|Buyer):\s*/i, '')
+      .trim();
+    
+    return cleanValue;
   }, [investors, owners])
 
   const loadData = useCallback(async () => {
@@ -331,17 +369,25 @@ export default function PaymentDetail() {
     router.push('/login')
   }
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status, dueDate = null) => {
+    let displayStatus = status || 'pending'
+    
+    // Check if payment is overdue
+    if (displayStatus === 'pending' && dueDate && new Date(dueDate) < new Date()) {
+      displayStatus = 'overdue'
+    }
+    
     const statusColors = {
       'pending': 'bg-yellow-100 text-yellow-800',
       'completed': 'bg-green-100 text-green-800',
       'cancelled': 'bg-red-100 text-red-800',
+      'failed': 'bg-red-100 text-red-800',
       'overdue': 'bg-red-100 text-red-800'
     }
     
     return (
-      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${statusColors[status] || 'bg-gray-100 text-gray-800'}`}>
-        {status?.charAt(0).toUpperCase() + status?.slice(1) || 'Pending'}
+      <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${statusColors[displayStatus] || 'bg-gray-100 text-gray-800'}`}>
+        {displayStatus?.charAt(0).toUpperCase() + displayStatus?.slice(1) || 'Pending'}
       </span>
     )
   }
@@ -351,6 +397,7 @@ export default function PaymentDetail() {
       'land_purchase': 'bg-blue-100 text-blue-800',
       'investment_sale': 'bg-orange-100 text-orange-800',
       'documentation_legal': 'bg-green-100 text-green-800',
+      'maintenance_taxes': 'bg-purple-100 text-purple-800',
       'other': 'bg-gray-100 text-gray-800',
       // Legacy support
       'advance': 'bg-blue-100 text-blue-800',
@@ -359,11 +406,12 @@ export default function PaymentDetail() {
       'registration': 'bg-green-100 text-green-800'
     }
     
-    // Normalize display text
+    // Normalize display text - matching Edit Payment page labels
     const typeLabels = {
       'land_purchase': 'Land Purchase',
-      'investment_sale': 'Investment/Sale',
-      'documentation_legal': 'Documentation & Legal',
+      'investment_sale': 'Investment Sale',
+      'documentation_legal': 'Documentation/Legal',
+      'maintenance_taxes': 'Maintenance/Taxes',
       'other': 'Other',
       // Legacy labels
       'advance': 'Advance',
@@ -373,24 +421,10 @@ export default function PaymentDetail() {
     }
     
     return (
-      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${typeColors[type] || 'bg-gray-100 text-gray-800'}`}>
+      <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${typeColors[type] || 'bg-gray-100 text-gray-800'}`}>
         {typeLabels[type] || type || 'Other'}
       </span>
     )
-  }
-
-  // Helper function to clean party names (remove role prefixes if they exist)
-  const cleanPartyName = (name) => {
-    if (!name) return 'Not specified'
-    // Remove role prefixes that might have been added
-    return name
-      .replace(/^Owner\s*-\s*/i, '')
-      .replace(/^Investor\s*-\s*/i, '')
-      .replace(/^Buyer\s*-\s*/i, '')
-      .replace(/^Owner:\s*/i, '')
-      .replace(/^Investor:\s*/i, '')
-      .replace(/^Buyer:\s*/i, '')
-      .trim()
   }
 
   // Helper function to format currency
@@ -483,7 +517,7 @@ export default function PaymentDetail() {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Type & Status</label>
                   <div className="space-x-2">
                     {getTypeBadge(payment.payment_type)}
-                    {getStatusBadge(payment.status)}
+                    {getStatusBadge(payment.status, payment.due_date)}
                   </div>
                 </div>
 
@@ -518,7 +552,7 @@ export default function PaymentDetail() {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Payment Mode</label>
                   <div className="text-slate-900">
-                    {payment.payment_mode || 'Not specified'}
+                    {payment.payment_mode ? payment.payment_mode.replace(/_/g, ' ').toUpperCase() : 'Not specified'}
                   </div>
                 </div>
 

@@ -33,9 +33,71 @@ export default function EditPayment() {
     notes: '',
     category: ''
   })
+  const [errors, setErrors] = useState({})
   
   const router = useRouter()
   const { dealId, paymentId } = router.query
+
+  // Payment type definitions - complete list matching backend and UI requirements
+  const paymentTypes = [
+    { 
+      value: 'land_purchase', 
+      label: 'Land Purchase', 
+      description: 'Direct land acquisition payments'
+    },
+    { 
+      value: 'investment_sale', 
+      label: 'Investment Sale', 
+      description: 'Investment returns or property sales'
+    },
+    { 
+      value: 'documentation_legal', 
+      label: 'Documentation/Legal', 
+      description: 'Legal fees, documentation costs'
+    },
+    { 
+      value: 'maintenance_taxes', 
+      label: 'Maintenance/Taxes', 
+      description: 'Property maintenance, tax payments'
+    },
+    { 
+      value: 'other', 
+      label: 'Other', 
+      description: 'Miscellaneous payments'
+    },
+    { 
+      value: 'advance', 
+      label: 'Advance', 
+      description: 'Advance payments'
+    },
+    { 
+      value: 'partial', 
+      label: 'Partial', 
+      description: 'Partial payments'
+    },
+    { 
+      value: 'final', 
+      label: 'Final', 
+      description: 'Final payments'
+    },
+    { 
+      value: 'registration', 
+      label: 'Registration', 
+      description: 'Registration and registration-related payments'
+    }
+  ]
+
+  // Payment mode options
+  const paymentModes = [
+    { value: 'UPI', label: 'UPI' },
+    { value: 'NEFT', label: 'NEFT' },
+    { value: 'RTGS', label: 'RTGS' },
+    { value: 'IMPS', label: 'IMPS' },
+    { value: 'Bank Transfer', label: 'Bank Transfer' },
+    { value: 'Cheque', label: 'Cheque' },
+    { value: 'Cash', label: 'Cash' },
+    { value: 'Other', label: 'Other' }
+  ]
 
   const loadOwnersAndInvestors = useCallback(async () => {
     try {
@@ -70,12 +132,12 @@ export default function EditPayment() {
       const [type, id] = value.split('_');
       const numericId = parseInt(id);
       
-      if (type === 'investor' && investors) {
+      if (type === 'investor' && Array.isArray(investors)) {
         const investor = investors.find(inv => inv.id === numericId);
         return investor ? investor.investor_name : value;
       }
       
-      if (type === 'owner' && owners) {
+      if (type === 'owner' && Array.isArray(owners)) {
         const owner = owners.find(own => own.id === numericId);
         return owner ? owner.name : value;
       }
@@ -117,53 +179,122 @@ export default function EditPayment() {
       setDeal(mergedDeal)
       setPayment(paymentData)
 
-      // build party options - investors first, then buyers, then owners
-      const opts = []
+      // Build structured party options similar to Add Payment page
+      const partyGroups = {
+        investors: [],
+        buyers: [],
+        owners: []
+      }
+
+      // Process investors
       if (Array.isArray(mergedDeal.investors)) {
         mergedDeal.investors.forEach(inv => {
           const name = inv.investor_name || inv.name || 'Investor'
-          opts.push({ value: name, label: `Investor - ${name}` })
+          const id = inv.id || inv.investor_id
+          partyGroups.investors.push({ 
+            value: `investor_${id}`, 
+            label: name,
+            name: name,
+            id: id,
+            type: 'investor'
+          })
         })
       }
-      if (Array.isArray(mergedDeal.buyers)) {
-        mergedDeal.buyers.forEach(b => {
-          const name = b.name || b.buyer_name || 'Buyer'
-          opts.push({ value: name, label: `Buyer - ${name}` })
-        })
-      }
-      if (Array.isArray(mergedDeal.owners)) {
-        mergedDeal.owners.forEach(o => {
-          const name = o.name || o.owner_name || o.owner || 'Owner'
-          opts.push({ value: name, label: `Owner - ${name}` })
-        })
-      }
-      opts.push({ value: '__other__', label: 'Other (enter name below)' })
-      setPartyOptions(opts)
 
-      // prepare initial paid_by select/other values
+      // Process buyers
+      if (Array.isArray(mergedDeal.buyers)) {
+        mergedDeal.buyers.forEach(buyer => {
+          const name = buyer.name || buyer.buyer_name || 'Buyer'
+          const id = buyer.id || buyer.buyer_id
+          partyGroups.buyers.push({ 
+            value: `buyer_${id}`, 
+            label: name,
+            name: name,
+            id: id,
+            type: 'buyer'
+          })
+        })
+      }
+
+      // Process owners
+      if (Array.isArray(mergedDeal.owners)) {
+        mergedDeal.owners.forEach(owner => {
+          const name = owner.name || owner.owner_name || owner.owner || 'Owner'
+          const id = owner.id || owner.owner_id
+          partyGroups.owners.push({ 
+            value: `owner_${id}`, 
+            label: name,
+            name: name,
+            id: id,
+            type: 'owner'
+          })
+        })
+      }
+
+      // Build structured options with groups (Investors first, then buyers, then owners)
+      const structuredOptions = []
+      
+      if (partyGroups.investors.length > 0) {
+        structuredOptions.push({ type: 'group', label: 'Investors' })
+        partyGroups.investors.forEach(investor => structuredOptions.push(investor))
+      }
+      
+      if (partyGroups.buyers.length > 0) {
+        structuredOptions.push({ type: 'group', label: 'Buyers' })
+        partyGroups.buyers.forEach(buyer => structuredOptions.push(buyer))
+      }
+      
+      if (partyGroups.owners.length > 0) {
+        structuredOptions.push({ type: 'group', label: 'Owners' })
+        partyGroups.owners.forEach(owner => structuredOptions.push(owner))
+      }
+
+      // Add "Other" option
+      structuredOptions.push({ value: '__other__', label: 'Other (specify below)', type: 'Other' })
+      
+      setPartyOptions(structuredOptions)
+
+      // Helper to find party in structured options by name or ID format
+      const findPartyInOptions = (searchValue) => {
+        if (!searchValue) return null
+        
+        // First try to find exact value match (for ID format like "investor_123")
+        let party = structuredOptions.find(p => p.value === searchValue && p.type !== 'group')
+        if (party) return party
+        
+        // Try to find by name (clean any role prefixes)
+        const cleanName = searchValue.replace(/^(Owner|Investor|Buyer):\s*/i, '').trim()
+        party = structuredOptions.find(p => p.label === cleanName && p.type !== 'group')
+        if (party) return party
+        
+        // Try partial name matching
+        party = structuredOptions.find(p => 
+          p.label && p.label.toLowerCase().includes(cleanName.toLowerCase()) && p.type !== 'group'
+        )
+        
+        return party
+      }
+
+      // Prepare initial paid_by select/other values
       let initialPaidBySelect = ''
       let initialPaidByOther = ''
       if (paymentData.paid_by) {
-        // strip role prefixes if present
-        const stripped = paymentData.paid_by.replace(/^Owner:\s*/i, '').replace(/^Investor:\s*/i, '').replace(/^Buyer:\s*/i, '')
-        // if stripped matches one of the options values, select it, otherwise set Other
-        const match = opts.find(o => o.value === stripped)
-        if (match) {
-          initialPaidBySelect = stripped
+        const foundParty = findPartyInOptions(paymentData.paid_by)
+        if (foundParty) {
+          initialPaidBySelect = foundParty.value
         } else {
           initialPaidBySelect = '__other__'
           initialPaidByOther = paymentData.paid_by
         }
       }
 
-      // prepare initial paid_to select/other values
+      // Prepare initial paid_to select/other values
       let initialPaidToSelect = ''
       let initialPaidToOther = ''
       if (paymentData.paid_to) {
-        const strippedTo = paymentData.paid_to.replace(/^Owner:\s*/i, '').replace(/^Investor:\s*/i, '').replace(/^Buyer:\s*/i, '')
-        const matchTo = opts.find(o => o.value === strippedTo)
-        if (matchTo) {
-          initialPaidToSelect = strippedTo
+        const foundPartyTo = findPartyInOptions(paymentData.paid_to)
+        if (foundPartyTo) {
+          initialPaidToSelect = foundPartyTo.value
         } else {
           initialPaidToSelect = '__other__'
           initialPaidToOther = paymentData.paid_to
@@ -284,31 +415,53 @@ export default function EditPayment() {
       ...prev,
       [name]: value
     }))
+
+    // Clear errors for this field
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }))
+    }
+  }
+
+  const validateForm = () => {
+    const requiredFields = {
+      amount: formData.amount,
+      description: formData.description,
+      paid_by_select: formData.paid_by_select
+    }
+
+    const newErrors = {}
+    Object.entries(requiredFields).forEach(([field, value]) => {
+      if (!value) {
+        newErrors[field] = `${field.replace('_', ' ')} is required`
+      }
+    })
+
+    // Custom validations
+    if (formData.amount && parseFloat(formData.amount) <= 0) {
+      newErrors.amount = 'Amount must be greater than 0'
+    }
+
+    if (formData.paid_by_select === '__other__' && !formData.paid_by_other) {
+      newErrors.paid_by_other = 'Please enter the payer name'
+    }
+
+    if (formData.payment_date && new Date(formData.payment_date) > new Date()) {
+      newErrors.payment_date = 'Payment date cannot be in the future'
+    }
+
+    if (formData.due_date && formData.payment_date && new Date(formData.due_date) < new Date(formData.payment_date)) {
+      newErrors.due_date = 'Due date cannot be before payment date'
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     
-    // Validate required fields
-    if (!formData.amount) {
-      toast.error('Amount is required')
-      return
-    }
-    
-    if (!formData.description) {
-      toast.error('Description is required')
-      return
-    }
-    
-    // Validate required fields
-    const amount = parseFloat(formData.amount)
-    if (!formData.amount || isNaN(amount) || amount <= 0) {
-      toast.error('Please enter a valid amount greater than 0')
-      return
-    }
-
-    if (!formData.payment_date || formData.payment_date.trim() === '') {
-      toast.error('Payment date is required')
+    if (!validateForm()) {
+      toast.error('Please correct the errors below')
       return
     }
 
@@ -323,6 +476,7 @@ export default function EditPayment() {
     const payload = {}
 
     // amount (required and validated above)
+    const amount = parseFloat(formData.amount)
     payload.amount = amount
 
     // helper to set string fields only when non-empty
@@ -433,9 +587,13 @@ export default function EditPayment() {
                            (payload.payment_type && payload.payment_type !== (payment?.payment_type || 'land_purchase')) ||
                            (payload.status && payload.status !== (payment?.status || 'pending'))
     
-    // If no dates are changing and the main required fields are the same, check if this is just selecting the same date
-    if (!hasDateChanges && !hasOtherChanges && Object.keys(payload).length <= 2) {
-      toast.error('No changes detected. Please modify the payment details or select a different date.')
+    // Always allow updates if amount or description changed, even if dates are the same
+    const hasAmountChange = payload.amount !== payment?.amount
+    const hasDescriptionChange = payload.description !== payment?.description
+    
+    // If no meaningful changes detected
+    if (!hasDateChanges && !hasOtherChanges && !hasAmountChange && !hasDescriptionChange) {
+      toast.error('No changes detected. Please modify the payment details.')
       setSaving(false)
       return
     }
@@ -467,7 +625,9 @@ export default function EditPayment() {
       setSaving(true)
       await paymentsAPI.update(numericDealId, numericPaymentId, submitData)
       toast.success('Payment updated successfully')
-      router.push(`/payments/${numericDealId}/${numericPaymentId}`)
+      
+      // Redirect to payments list instead of payment detail to avoid potential 404s
+      router.push(`/payments`)
     } catch (error) {
       console.error('Failed to update payment:', error)
       console.error('Error response:', error.response?.data)
@@ -481,12 +641,9 @@ export default function EditPayment() {
       let errorMessage = 'Failed to update payment'
       
       if (error.response?.status === 404) {
-        // Special handling for 404 errors which often happen with date issues
-        if (formData.payment_date === originalPaymentDate) {
-          errorMessage = 'Please select a different date or modify other payment details. The current date appears to be the same as the existing one.'
-        } else {
-          errorMessage = 'Payment not found. Please refresh the page and try again.'
-        }
+        // Special handling for 404 errors
+        errorMessage = 'Payment not found. Please refresh the page and try again.'
+        console.log('404 Error - Payment may have been deleted or ID changed')
       } else if (error.response?.status === 400) {
         // Handle validation errors
         if (error.response?.data?.error) {
@@ -652,12 +809,17 @@ export default function EditPayment() {
                     name="amount"
                     value={formData.amount}
                     onChange={handleInputChange}
-                    className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className={`w-full pl-8 pr-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 ${
+                      errors.amount ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                    }`}
                     style={{ appearance: 'textfield' }}
                     placeholder="0.00"
                     required
                   />
                 </div>
+                {errors.amount && (
+                  <div className="mt-1 text-xs text-red-500">{errors.amount}</div>
+                )}
               </div>
 
               <div>
@@ -670,15 +832,9 @@ export default function EditPayment() {
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="land_purchase">Land Purchase</option>
-                  <option value="investment_sale">Investment Sale</option>
-                  <option value="documentation_legal">Documentation/Legal</option>
-                  <option value="maintenance_taxes">Maintenance/Taxes</option>
-                  <option value="other">Other</option>
-                  <option value="advance">Advance</option>
-                  <option value="partial">Partial</option>
-                  <option value="final">Final</option>
-                  <option value="registration">Registration</option>
+                  {paymentTypes.map(type => (
+                    <option key={type.value} value={type.value}>{type.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -691,38 +847,39 @@ export default function EditPayment() {
                   name="payment_date"
                   value={formData.payment_date}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 ${
+                    errors.payment_date ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                  }`}
                 />
+                {errors.payment_date && (
+                  <div className="mt-1 text-xs text-red-500">{errors.payment_date}</div>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Due Date
-                </label>
-                <input
-                  type="date"
-                  name="due_date"
-                  value={formData.due_date}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Paid By
+                  Paid By <span className="text-red-500">*</span>
                 </label>
                 <select
                   name="paid_by_select"
                   value={formData.paid_by_select}
                   onChange={(e) => setFormData(prev => ({ ...prev, paid_by_select: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 ${
+                    errors.paid_by_select ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                  }`}
                 >
                   <option value="">-- Select payer --</option>
-                  {partyOptions.map((p, idx) => (
-                    <option key={idx} value={p.value}>{p.label}</option>
-                  ))}
+                  {partyOptions.map((p, idx) => 
+                    p.type === 'group' ? (
+                      <optgroup key={idx} label={p.label} />
+                    ) : (
+                      <option key={idx} value={p.value}>{p.label}</option>
+                    )
+                  )}
                 </select>
+                {errors.paid_by_select && (
+                  <div className="mt-1 text-xs text-red-500">{errors.paid_by_select}</div>
+                )}
 
                 {formData.paid_by_select === '__other__' && (
                   <input
@@ -730,9 +887,14 @@ export default function EditPayment() {
                     name="paid_by_other"
                     value={formData.paid_by_other}
                     onChange={(e) => setFormData(prev => ({ ...prev, paid_by_other: e.target.value }))}
-                    className="mt-2 w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className={`mt-2 w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 ${
+                      errors.paid_by_other ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                    }`}
                     placeholder="Enter payer name"
                   />
+                )}
+                {errors.paid_by_other && (
+                  <div className="mt-1 text-xs text-red-500">{errors.paid_by_other}</div>
                 )}
               </div>
 
@@ -747,9 +909,13 @@ export default function EditPayment() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">-- Select receiver --</option>
-                  {partyOptions.map((p, idx) => (
-                    <option key={idx} value={p.value}>{p.label}</option>
-                  ))}
+                  {partyOptions.map((p, idx) => 
+                    p.type === 'group' ? (
+                      <optgroup key={idx} label={p.label} />
+                    ) : p.value === '__other__' ? null : (
+                      <option key={idx} value={p.value}>{p.label}</option>
+                    )
+                  )}
                   <option value="__other__">Other (enter name below)</option>
                 </select>
 
@@ -781,6 +947,23 @@ export default function EditPayment() {
                   <option value="cancelled">Cancelled</option>
                   <option value="failed">Failed</option>
                 </select>
+                {formData.status === 'pending' && (
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
+                    <input 
+                      name="due_date" 
+                      type="date" 
+                      value={formData.due_date} 
+                      onChange={handleInputChange} 
+                      className={`w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 ${
+                        errors.due_date ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                      }`}
+                    />
+                    {errors.due_date && (
+                      <div className="mt-1 text-xs text-red-500">{errors.due_date}</div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -794,14 +977,9 @@ export default function EditPayment() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">Select payment mode</option>
-                  <option value="UPI">UPI</option>
-                  <option value="NEFT">NEFT</option>
-                  <option value="RTGS">RTGS</option>
-                  <option value="IMPS">IMPS</option>
-                  <option value="Cash">Cash</option>
-                  <option value="Cheque">Cheque</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="Other">Other</option>
+                  {paymentModes.map(mode => (
+                    <option key={mode.value} value={mode.value}>{mode.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -814,9 +992,14 @@ export default function EditPayment() {
                   name="reference"
                   value={formData.reference}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 ${
+                    errors.reference ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                  }`}
                   placeholder="Transaction reference or ID"
                 />
+                {errors.reference && (
+                  <div className="mt-1 text-xs text-red-500">{errors.reference}</div>
+                )}
               </div>
 
               <div>
@@ -856,10 +1039,15 @@ export default function EditPayment() {
                   value={formData.description}
                   onChange={handleInputChange}
                   rows={3}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 ${
+                    errors.description ? 'border-red-500 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
+                  }`}
                   placeholder="Payment description or notes"
                   required
                 />
+                {errors.description && (
+                  <div className="mt-1 text-xs text-red-500">{errors.description}</div>
+                )}
               </div>
             </div>
 
