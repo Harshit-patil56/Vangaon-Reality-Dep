@@ -2,7 +2,7 @@
 import axios from 'axios'
 import { getToken } from './auth'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
 // Simple cache for performance
 const cache = new Map()
