@@ -7,7 +7,7 @@ set -e
 echo "🚀 Starting Land Deals Manager setup on DigitalOcean droplet..."
 
 # Configuration variables (UPDATE THESE)
-DROPLET_IP="YOUR_DROPLET_IP"
+DROPLET_IP="64.227.128.245"
 DOMAIN_NAME=""  # Optional: your domain name
 DB_PASSWORD="$(openssl rand -base64 16)"
 SECRET_KEY="$(openssl rand -base64 32)"
