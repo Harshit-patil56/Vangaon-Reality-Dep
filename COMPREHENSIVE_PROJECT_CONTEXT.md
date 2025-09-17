@@ -1,8 +1,8 @@
-# Land Deals Manager - Comprehensive Project Context
+# Land Deals Manager - Comprehensive Project Context (DigitalOcean Deployment)
 
 ## 🏗️ Project Overview
 
-**Land Deals Manager** is a comprehensive full-stack web application for managing real estate deals, payments, owners, and investors. The application follows modern architecture with React/Next.js frontend and Python Flask backend, designed for professional property management workflows.
+**Land Deals Manager** is a comprehensive full-stack web application for managing real estate deals, payments, owners, and investors. The application is designed for deployment on DigitalOcean droplets with local MySQL database, following modern architecture with React/Next.js frontend and Python Flask backend, optimized for professional property management workflows.
 
 ### Core Business Logic
 - **Deal Management**: Create, track, and manage land purchase/sale transactions
@@ -10,6 +10,7 @@
 - **Investor & Owner Management**: Track stakeholders with percentage shareholding
 - **Financial Reporting**: Generate comprehensive reports and analytics
 - **Document Management**: Structured document upload and organization
+- **User Access Control**: Role-based access with entity-specific restrictions
 - **Star System**: Gmail-style favorites for quick access
 
 ## 🛠️ Technology Stack
@@ -28,7 +29,7 @@
 
 ### Backend
 - **Framework**: Python Flask
-- **Database**: MySQL (Aiven cloud hosting)
+- **Database**: MySQL (Local on DigitalOcean Droplet)
 - **Authentication**: JWT tokens with bcrypt password hashing
 - **File Upload**: Werkzeug secure file handling
 - **CORS**: Flask-CORS for cross-origin requests
@@ -36,62 +37,75 @@
 - **PDF Generation**: ReportLab for server-side PDF reports
 - **Environment**: python-dotenv for configuration
 
-### Database
-- **Database**: Aiven MySQL cloud service
+### Infrastructure
+- **Hosting**: DigitalOcean Droplet (Ubuntu 22.04 LTS)
+- **Database**: MySQL 8.0+ (Local installation)
+- **Process Manager**: PM2 for application lifecycle
+- **Web Server**: Nginx (Reverse proxy)
+- **SSL**: Let's Encrypt (Optional)
 
 ## 📁 Project Structure
 
 ```
 Land-deals-manager/
-├── land-deals-backend/                 # Python Flask API Server
-│   ├── app.py                         # Main Flask application (6614 lines)
-│   ├── init_schema.sql                # Complete database schema
-│   ├── document_manager.py            # File upload management
-│   ├── wsgi.py                        # WSGI entry point
-│   ├── requirements.txt               # Python dependencies
-│   ├── vercel.json                    # Vercel deployment config
-│   ├── migrations/                    # Database migration scripts
-│   │   ├── 20250901_add_purchase_amount.sql
-│   │   ├── 20250901_add_status_and_pay_to.sql
-│   │   ├── 20250906_add_installment_fields.sql
-│   │   └── ...
-│   ├── blueprints/                    # Route organization
+├── DEPLOYMENT_GUIDE.md               # DigitalOcean deployment instructions
+├── ENVIRONMENT_SETUP.md              # Environment configuration guide
+├── COMPREHENSIVE_PROJECT_CONTEXT.md  # This file
+├── ecosystem.config.js               # PM2 process configuration
+├── land-deals-backend/               # Python Flask API Server
+│   ├── app.py                        # Main Flask application (7200+ lines)
+│   ├── init_schema.sql               # Complete database schema
+│   ├── document_manager.py           # File upload management
+│   ├── wsgi.py                       # WSGI entry point
+│   ├── requirements.txt              # Python dependencies
+│   ├── .env.example                  # Environment template
+│   ├── venv/                         # Python virtual environment
+│   ├── blueprints/                   # Route organization
 │   │   ├── __init__.py
 │   │   ├── deals.py
 │   │   └── investors.py
-│   ├── sql/                           # SQL utility scripts
-│   └── uploads/                       # File storage directory
-├── land-deals-frontend/my-app/        # Next.js React Application
-│   ├── pages/                         # Next.js pages (routing)
-│   │   ├── _app.js                    # App wrapper
-│   │   ├── dashboard.js               # Main dashboard
-│   │   ├── login.js                   # Authentication
+│   ├── sql/                          # SQL utility scripts
+│   │   ├── create_payments_table.sql
+│   │   ├── create_payment_proofs_table_v2.sql
+│   │   ├── create_payment_parties_table.sql
+│   │   └── add_user_linking_fields.sql
+│   └── uploads/                      # File storage directory
+├── land-deals-frontend/my-app/       # Next.js React Application
+│   ├── pages/                        # Next.js pages (routing)
+│   │   ├── _app.js                   # App wrapper
+│   │   ├── dashboard.js              # Admin/Auditor dashboard
+│   │   ├── user-dashboard.js         # User-specific dashboard
+│   │   ├── login.js                  # Authentication
 │   │   ├── owners.js & owners/[id].js # Owner management
 │   │   ├── investors.js & investors/[id].js # Investor management
-│   │   ├── deals/                     # Deal management
-│   │   │   ├── all.js                 # Deals listing
-│   │   │   ├── new.js                 # Create deal form
-│   │   │   ├── [id].js                # Deal details/edit
-│   │   │   └── payments.js            # Payment management
-│   │   ├── payments/index.js          # Global payments view
-│   │   ├── reports/index.js           # Reports & analytics
-│   │   └── admin/                     # Administration
-│   ├── components/                    # Reusable React components
-│   │   ├── layout/                    # Layout components
-│   │   │   └── Navbar.js              # Navigation component
-│   │   └── common/                    # Common UI components
-│   │       └── ConfirmModal.js        # Modal dialogs
-│   ├── lib/                           # Utilities and configurations
-│   │   ├── api.js                     # API client with caching
-│   │   ├── auth.js                    # Authentication utilities
-│   │   └── permissions.js             # Role-based permissions
-│   ├── app/                           # App directory
-│   │   └── globals.css                # Global styles
-│   ├── styles/                        # Additional styling
-│   ├── tailwind.config.js             # Tailwind configuration
-│   ├── package.json                   # Node.js dependencies
-│   └── next.config.js                 # Next.js configuration
-└── backups/                           # Database backups
+│   │   ├── deals/                    # Deal management
+│   │   │   ├── all.js                # Deals listing
+│   │   │   ├── new.js                # Create deal form
+│   │   │   ├── [id].js               # Deal details/edit
+│   │   │   └── payments.js           # Payment management
+│   │   ├── payments/index.js         # Global payments view
+│   │   ├── reports/index.js          # Reports & analytics
+│   │   └── admin/                    # Administration
+│   │       ├── index.js              # Admin panel
+│   │       └── users.js              # User management
+│   ├── components/                   # Reusable React components
+│   │   ├── layout/                   # Layout components
+│   │   │   └── Navbar.js             # Navigation component
+│   │   └── common/                   # Common UI components
+│   │       └── ConfirmModal.js       # Modal dialogs
+│   ├── lib/                          # Utilities and configurations
+│   │   ├── api.js                    # API client with caching
+│   │   ├── auth.js                   # Authentication utilities
+│   │   └── permissions.js            # Role-based permissions
+│   ├── .next/                        # Built application (production)
+│   ├── app/                          # App directory
+│   │   └── globals.css               # Global styles
+│   ├── styles/                       # Additional styling
+│   ├── tailwind.config.js            # Tailwind configuration
+│   ├── package.json                  # Node.js dependencies
+│   ├── .env.example                  # Frontend environment template
+│   └── next.config.js                # Next.js configuration
+└── backups/                          # Database backups
     ├── payments_backup_*.sql
     ├── payment_parties_backup_*.sql
     └── payment_proofs_backup_*.sql

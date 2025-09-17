@@ -593,7 +593,14 @@ export default function EditPayment() {
     
     // If no meaningful changes detected
     if (!hasDateChanges && !hasOtherChanges && !hasAmountChange && !hasDescriptionChange) {
-      toast.error('No changes detected. Please modify the payment details.')
+      toast.info('No changes detected. Payment details are already up to date.')
+      setSaving(false)
+      return
+    }
+
+    // Special check: if the same date is applied, show a friendly message instead of making API call
+    if (formData.payment_date === originalPaymentDate && !hasOtherChanges && !hasAmountChange && !hasDescriptionChange) {
+      toast.info('Payment date is already set to this value. No changes needed.')
       setSaving(false)
       return
     }
@@ -626,8 +633,8 @@ export default function EditPayment() {
       await paymentsAPI.update(numericDealId, numericPaymentId, submitData)
       toast.success('Payment updated successfully')
       
-      // Redirect to payments list instead of payment detail to avoid potential 404s
-      router.push(`/payments`)
+      // Redirect back to the deal's payments section since this payment belongs to a specific deal
+      router.push(`/deals/${numericDealId}?section=payments`)
     } catch (error) {
       console.error('Failed to update payment:', error)
       console.error('Error response:', error.response?.data)
@@ -642,8 +649,17 @@ export default function EditPayment() {
       
       if (error.response?.status === 404) {
         // Special handling for 404 errors
-        errorMessage = 'Payment not found. Please refresh the page and try again.'
-        console.log('404 Error - Payment may have been deleted or ID changed')
+        errorMessage = 'Payment not found or endpoint unavailable. This might be a temporary issue. Please check the payment exists and try again.'
+        console.log('404 Error Details:')
+        console.log('- Deal ID:', numericDealId)
+        console.log('- Payment ID:', numericPaymentId)
+        console.log('- Request URL would be:', `/api/payments/${numericDealId}/${numericPaymentId}`)
+        console.log('- Submit data:', submitData)
+        
+        // Check if it's a same-date issue by adding additional context
+        if (formData.payment_date === originalPaymentDate) {
+          errorMessage = 'Unable to update payment. The date appears to be unchanged. Please try refreshing the page.'
+        }
       } else if (error.response?.status === 400) {
         // Handle validation errors
         if (error.response?.data?.error) {
@@ -1053,7 +1069,7 @@ export default function EditPayment() {
 
             <div className="flex items-center justify-between pt-6 border-t border-slate-200">
               <div className="flex space-x-3">
-                <Link href={`/payments/${dealId}/${paymentId}`} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors">
+                <Link href={`/deals/${dealId}?section=payments`} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors">
                   Cancel
                 </Link>
               </div>

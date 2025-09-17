@@ -1,0 +1,25 @@
+<svg width="600" height="350" viewBox="0 0 600 350" xmlns="http://www.w3.org/2000/svg" font-family="Roboto, sans-serif">
+  <rect width="600" height="350" fill="#FFFFFF"/>
+
+  <g transform="translate(200, 50)">
+    <path d="M0,120 Q30,130 90,120 C150,110 160,130 160,100 L160,130 L0,130 Z" fill="#7B5B3C"/>
+    <path d="M0,100 Q20,80 80,85 C140,90 160,70 160,75 L160,100 Z" fill="#2E8B57"/>
+
+    <rect x="35" y="45" width="35" height="35" fill="#3CB371"/>
+    <polygon points="30,55 52.5,25 75,55" fill="#58B2DC"/>
+
+    <rect x="42" y="55" width="8" height="8" fill="#FFFFFF"/>
+    <rect x="53" y="55" width="8" height="8" fill="#FFFFFF"/>
+    <rect x="42" y="66" width="8" height="8" fill="#FFFFFF"/>
+    <rect x="53" y="66" width="8" height="8" fill="#FFFFFF"/>
+
+    <circle cx="110" cy="45" r="20" fill="#FF8C00"/>
+
+    <path d="M120,65 C130,60 145,65 160,70 C175,75 185,80 195,75 L190,70 L200,75 L190,80 Z" fill="#2E8B57" stroke="#2E8B57" stroke-width="2"/>
+  </g>
+
+  <g transform="translate(180, 240)">
+    <text x="0" y="0" font-size="30" font-weight="900" letter-spacing="2" fill="#2C2C2C" text-anchor="start">Vangaon Reality</text>
+    <text x="0" y="40" font-size="20" fill="#2C2C2C" text-anchor="start">Land Deals Manager</text>
+  </g>
+</svg>

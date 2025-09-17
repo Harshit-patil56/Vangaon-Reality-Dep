@@ -5,15 +5,9 @@ import { getUser, logout, isAuthenticated } from '../../lib/auth';
 import { hasPermission, PERMISSIONS } from '../../lib/permissions';
 import Navbar from '../../components/layout/Navbar';
 import { 
-  Users, 
-  Settings, 
-  Shield, 
-  Database,
-  Activity,
-  AlertTriangle
-} from 'lucide-react';
-
-export default function AdminDashboard() {
+  Users,
+  Shield
+} from 'lucide-react';export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -50,16 +44,6 @@ export default function AdminDashboard() {
       bgColor: 'bg-blue-50',
       iconColor: 'text-blue-600',
       borderColor: 'border-blue-200'
-    },
-    {
-      title: 'System Maintenance',
-      description: 'Database maintenance and system configuration',
-      icon: Settings,
-      href: '/admin/maintenance',
-      color: 'slate',
-      bgColor: 'bg-slate-50',
-      iconColor: 'text-slate-600',
-      borderColor: 'border-slate-200'
     }
   ];
 
@@ -98,65 +82,6 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <div className="w-full px-6 py-8 space-y-8">
         
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200">
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">System Status</p>
-                  <p className="text-lg font-bold text-green-600 mt-2">Operational</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-lg">
-                  <Activity className="w-6 h-6 text-green-600" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200">
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Database</p>
-                  <p className="text-lg font-bold text-blue-600 mt-2">Connected</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
-                  <Database className="w-6 h-6 text-blue-600" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200">
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Security</p>
-                  <p className="text-lg font-bold text-green-600 mt-2">Secure</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-lg">
-                  <Shield className="w-6 h-6 text-green-600" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200">
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Alerts</p>
-                  <p className="text-lg font-bold text-slate-600 mt-2">0</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-slate-100 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-slate-600" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Admin Modules */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200">
           <div className="px-6 py-4 border-b border-slate-200">

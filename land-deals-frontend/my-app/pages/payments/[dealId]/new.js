@@ -874,6 +874,32 @@ export default function NewPayment() {
                     {errors.paid_by_select && (
                       <div className="mt-1 text-xs text-red-500">{errors.paid_by_select}</div>
                     )}
+                    
+                    {/* Payer custom name input - appears directly below dropdown */}
+                    {formData.paid_by_select === '__other__' && (
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Payer Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="paid_by_other"
+                          value={formData.paid_by_other}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            setFormData(prev => ({ ...prev, paid_by_other: value }))
+                            validateField('paid_by_other', value)
+                          }}
+                          className={`w-full px-3 py-2 border rounded focus:border-slate-500 focus:ring-1 focus:ring-slate-500 ${
+                            errors.paid_by_other ? 'border-red-500' : 'border-slate-300'
+                          }`}
+                          placeholder="Enter the name of the payer"
+                        />
+                        {errors.paid_by_other && (
+                          <div className="mt-1 text-xs text-red-500">{errors.paid_by_other}</div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -940,6 +966,23 @@ export default function NewPayment() {
                       ))}
                       <option value="__other__">Other (specify below)</option>
                     </select>
+                    
+                    {/* Receiver custom name input - appears directly below dropdown */}
+                    {formData.paid_to_select === '__other__' && (
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Receiver Name
+                        </label>
+                        <input
+                          type="text"
+                          name="paid_to_other"
+                          value={formData.paid_to_other}
+                          onChange={(e) => setFormData(prev => ({ ...prev, paid_to_other: e.target.value }))}
+                          className="w-full px-3 py-2 border border-slate-300 rounded focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                          placeholder="Enter the name of the receiver"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -981,49 +1024,6 @@ export default function NewPayment() {
                   </div>
                 </div>
 
-                {/* Custom name inputs for "Other" selections */}
-                <div className="space-y-6">
-                  {formData.paid_by_select === '__other__' && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Payer Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="paid_by_other"
-                        value={formData.paid_by_other}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          setFormData(prev => ({ ...prev, paid_by_other: value }))
-                          validateField('paid_by_other', value)
-                        }}
-                        className={`w-full px-3 py-2 border rounded focus:border-slate-500 focus:ring-1 focus:ring-slate-500 ${
-                          errors.paid_by_other ? 'border-red-500' : 'border-slate-300'
-                        }`}
-                        placeholder="Enter the name of the payer"
-                      />
-                      {errors.paid_by_other && (
-                        <div className="mt-1 text-xs text-red-500">{errors.paid_by_other}</div>
-                      )}
-                    </div>
-                  )}
-
-                  {formData.paid_to_select === '__other__' && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Receiver Name
-                      </label>
-                      <input
-                        type="text"
-                        name="paid_to_other"
-                        value={formData.paid_to_other}
-                        onChange={(e) => setFormData(prev => ({ ...prev, paid_to_other: e.target.value }))}
-                        className="w-full px-3 py-2 border border-slate-300 rounded focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
-                        placeholder="Enter the name of the receiver"
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
 
               {/* Basic Information */}

@@ -13,19 +13,79 @@ export default function Dashboard() {
   const [user, setUser] = useState(null)
   const [deals, setDeals] = useState([])
   const [loading, setLoading] = useState(true)
+  const [tableLoading, setTableLoading] = useState(false)
   const [filterYear, setFilterYear] = useState('')
   const [statusFilter, setStatusFilter] = useState('') // 'all', 'open', 'closed', 'commission'
+  
+  // Statistics state (fetched separately for performance)
+  const [totalDeals, setTotalDeals] = useState(0)
+  const [availableYears, setAvailableYears] = useState([])
+  
+  // Pagination state - backend controlled
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(5)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   
   // Modal states
   const [showCloseModal, setShowCloseModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedDeal, setSelectedDeal] = useState(null)
 
-  const fetchDeals = useCallback(async () => {
+  const fetchDeals = useCallback(async (page = 1, isInitialLoad = false) => {
+    console.log('fetchDeals called with page:', page, 'isInitialLoad:', isInitialLoad)
     try {
-      const response = await dealAPI.getAll()
-      setDeals(response.data)
+      // Only show full loading on initial load, use tableLoading for pagination
+      if (isInitialLoad) {
+        setLoading(true)
+      } else {
+        setTableLoading(true)
+      }
+      
+      // Build query parameters for backend pagination
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: itemsPerPage.toString()
+      })
+      
+      // Add filter parameters if they exist
+      if (filterYear) {
+        params.append('year', filterYear)
+      }
+      if (statusFilter && statusFilter !== 'all') {
+        params.append('status', statusFilter)
+      }
+      
+      console.log('Fetching with params:', params.toString())
+      
+      // For initial load, also fetch statistics
+      if (isInitialLoad) {
+        // Fetch statistics separately (lightweight query)
+        const statsResponse = await dealAPI.getStats()
+        if (statsResponse.data) {
+          const stats = statsResponse.data
+          setTotalDeals(stats.total || 0)
+          setAvailableYears(stats.years || [])
+        }
+      }
+      
+      // Fetch paginated deals
+      const response = await dealAPI.getPaginated(params.toString())
+      
+      if (response.data) {
+        const { deals: paginatedDeals, pagination } = response.data
+        
+        console.log('Received deals:', paginatedDeals.length, 'pagination:', pagination)
+        
+        // Update deals state with current page data
+        setDeals(paginatedDeals || [])
+        setTotalPages(pagination?.totalPages || 1)
+        setTotalCount(pagination?.totalCount || 0)
+        setCurrentPage(pagination?.currentPage || page)
+      }
+      
     } catch (error) {
+      console.error('Error in fetchDeals:', error)
       if (error?.response?.status === 401) {
         toast.error('Session expired. Please login again.')
         logout()
@@ -33,10 +93,14 @@ export default function Dashboard() {
       } else {
         toast.error('Failed to fetch deals')
       }
+      setDeals([])
+      setTotalPages(1)
+      setTotalCount(0)
     } finally {
       setLoading(false)
+      setTableLoading(false)
     }
-  }, [router])
+  }, [router, itemsPerPage, filterYear, statusFilter])
 
   useEffect(() => {
     // Add a small delay to ensure page is fully mounted before checking auth
@@ -47,11 +111,33 @@ export default function Dashboard() {
       }
 
       setUser(getUser())
-      fetchDeals()
-    }, 50)
-    
+      fetchDeals(1, true) // Pass page 1 and isInitialLoad flag
+    }, 100)
+
     return () => clearTimeout(timer)
-  }, [fetchDeals, router])
+  }, [router, fetchDeals])
+
+  // Handle page changes - fetch data when currentPage changes
+  useEffect(() => {
+    if (user && currentPage !== 1) {
+      // For pages other than 1, fetch data when page changes
+      fetchDeals(currentPage, false)
+    }
+  }, [currentPage, user, fetchDeals])
+
+  // Reset to page 1 when filters change and fetch filtered data
+  useEffect(() => {
+    if (user) {
+      console.log('Filter changed - Year:', filterYear, 'Status:', statusFilter)
+      if (currentPage === 1) {
+        // If already on page 1, fetch data with new filters
+        fetchDeals(1, false)
+      } else {
+        // If not on page 1, setting page to 1 will trigger the above useEffect
+        setCurrentPage(1)
+      }
+    }
+  }, [filterYear, statusFilter, user, currentPage, fetchDeals])
 
   const handleLogout = () => {
     logout()
@@ -77,10 +163,8 @@ export default function Dashboard() {
       const response = await dealAPI.updateStatus(selectedDeal.id, 'closed')
       console.log('Close deal response:', response)
       toast.success('Deal closed successfully')
-      // Update the deal status in the local state
-      setDeals(deals.map(d => 
-        d.id === selectedDeal.id ? { ...d, status: 'closed' } : d
-      ))
+      // Refresh current page data and statistics
+      fetchDeals(currentPage, currentPage === 1)
     } catch (error) {
       console.error('Error closing deal:', error)
       console.error('Error details:', error.response?.data)
@@ -94,7 +178,8 @@ export default function Dashboard() {
     try {
       await dealAPI.delete(selectedDeal.id)
       toast.success('Deal deleted successfully')
-      setDeals(deals.filter(d => d.id !== selectedDeal.id))
+      // Refresh current page data and statistics
+      fetchDeals(currentPage, currentPage === 1)
     } catch (error) {
       console.error('Error deleting deal:', error)
       console.error('Error details:', error.response?.data)
@@ -116,32 +201,11 @@ export default function Dashboard() {
     )
   }
 
-  // Calculate statistics
-  const totalDeals = deals.length
-  const activeDeals = deals.filter(deal => deal.status === 'open').length
-  const closedDeals = deals.filter(deal => deal.status === 'closed').length
-  const commissionDeals = deals.filter(deal => deal.status === 'commission').length
-
-  // Filter functions
-  const filteredDeals = deals.filter(deal => {
-    const dealYear = deal.purchase_date ? new Date(deal.purchase_date).getFullYear().toString() : 'No Date'
-    const matchesYear = !filterYear || dealYear === filterYear
-    const matchesStatus = !statusFilter || 
-      (statusFilter === 'all') ||
-      (statusFilter === 'open' && deal.status === 'open') ||
-      (statusFilter === 'closed' && deal.status === 'closed') ||
-      (statusFilter === 'commission' && deal.status === 'commission')
-    return matchesYear && matchesStatus
-  })
-
-  // Get unique years for filter options
-  const availableYears = [...new Set(deals.map(deal => 
-    deal.purchase_date ? new Date(deal.purchase_date).getFullYear() : 'No Date'
-  ).filter(year => year !== 'No Date'))].sort((a, b) => b - a)
-
   const resetFilters = () => {
+    console.log('Resetting all filters')
     setFilterYear('')
     setStatusFilter('')
+    setCurrentPage(1) // Reset to first page when clearing filters
   }
 
   return (
@@ -162,13 +226,21 @@ export default function Dashboard() {
                 </h1>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3">
               {/* Filter Section */}
               <div className="flex items-center space-x-2 bg-slate-50 px-4 py-2 rounded border border-slate-200">
                 <span className="text-sm font-medium text-slate-700">Filter:</span>
                 <select
                   value={filterYear}
-                  onChange={(e) => setFilterYear(e.target.value)}
+                  onChange={(e) => {
+                    const selectedYear = e.target.value
+                    setFilterYear(selectedYear)
+                    // When year is selected, clear status filter to show all deals in that year
+                    if (selectedYear && statusFilter) {
+                      setStatusFilter('')
+                      console.log('Year filter applied, clearing status filter to show all deals in', selectedYear)
+                    }
+                  }}
                   className="text-sm border border-slate-300 rounded px-3 py-1 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
                 >
                   <option value="">All Years</option>
@@ -176,17 +248,28 @@ export default function Dashboard() {
                     <option key={year} value={year}>{year}</option>
                   ))}
                 </select>
+                
+                {/* Status Filter - only show if no year is selected or allow secondary filtering */}
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="text-sm border border-slate-300 rounded px-3 py-1 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
+                >
+                  <option value="">All Status</option>
+                  <option value="open">Active</option>
+                  <option value="closed">Closed</option>
+                  <option value="commission">Commission</option>
+                </select>
+                
                 {(filterYear || statusFilter) && (
                   <button
                     onClick={resetFilters}
                     className="text-xs text-slate-600 hover:text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 hover:bg-slate-50"
                   >
-                    Clear
+                    Clear All
                   </button>
                 )}
-              </div>
-
-              {(user?.role === 'admin' || user?.role === 'auditor') && (
+              </div>              {(user?.role === 'admin' || user?.role === 'auditor') && (
                 <Link href="/deals/new">
                   <span className="flex items-center rounded bg-slate-900 px-6 py-3 text-sm font-medium text-white hover:bg-slate-800 cursor-pointer">
                     + Create New Deal
@@ -204,90 +287,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content - Full Width Layout */}
-      <div className="w-full px-6 py-8 space-y-8">
-        
-        {/* Statistics Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-          {/* Total Deals */}
-          <div 
-            className={`bg-white rounded-lg shadow-sm border transition-all duration-200 cursor-pointer hover:shadow-md hover:border-slate-300 ${
-              statusFilter === 'all' ? 'border-slate-400 shadow-md' : 'border-slate-200'
-            }`}
-            onClick={() => setStatusFilter(statusFilter === 'all' ? '' : 'all')}
-          >
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Total Deals</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{totalDeals}</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-slate-100 rounded-lg">
-                  <span className="text-xs font-semibold text-slate-600">TOTAL</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Active Deals */}
-          <div 
-            className={`bg-white rounded-lg shadow-sm border transition-all duration-200 cursor-pointer hover:shadow-md hover:border-slate-300 ${
-              statusFilter === 'open' ? 'border-emerald-400 shadow-md' : 'border-slate-200'
-            }`}
-            onClick={() => setStatusFilter(statusFilter === 'open' ? '' : 'open')}
-          >
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Active Deals</p>
-                  <p className="text-3xl font-bold text-emerald-700 mt-2">{activeDeals}</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-emerald-100 rounded-lg">
-                  <span className="text-xs font-semibold text-emerald-600">ACTIVE</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Closed Deals */}
-          <div 
-            className={`bg-white rounded-lg shadow-sm border transition-all duration-200 cursor-pointer hover:shadow-md hover:border-slate-300 ${
-              statusFilter === 'closed' ? 'border-slate-400 shadow-md' : 'border-slate-200'
-            }`}
-            onClick={() => setStatusFilter(statusFilter === 'closed' ? '' : 'closed')}
-          >
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Closed Deals</p>
-                  <p className="text-3xl font-bold text-slate-700 mt-2">{closedDeals}</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-slate-100 rounded-lg">
-                  <span className="text-xs font-semibold text-slate-600">CLOSED</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Commission Deals */}
-          <div 
-            className={`bg-white rounded-lg shadow-sm border transition-all duration-200 cursor-pointer hover:shadow-md hover:border-slate-300 ${
-              statusFilter === 'commission' ? 'border-blue-400 shadow-md' : 'border-slate-200'
-            }`}
-            onClick={() => setStatusFilter(statusFilter === 'commission' ? '' : 'commission')}
-          >
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Commission Deals</p>
-                  <p className="text-3xl font-bold text-blue-700 mt-2">{commissionDeals}</p>
-                </div>
-                <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
-                  <span className="text-xs font-semibold text-blue-600">COMM</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="w-full px-6 py-8">
 
         {/* Main Content Layout */}
         <div className="w-full">
@@ -297,59 +297,73 @@ export default function Dashboard() {
             <div className="bg-white rounded-lg shadow-sm border border-slate-200">
               <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 rounded-t-lg">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900">
-                      Property Deals
-                      {(filterYear || statusFilter) && (
-                        <span className="ml-2 text-sm text-slate-600 font-normal">
-                          ({filteredDeals.length} of {totalDeals} deals)
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-3">
+                        {(filterYear || statusFilter) ? 'Filtered Deals' : 'Property Deals'}
+                        <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                          {(filterYear || statusFilter) ? `Found: ${totalCount}` : `Total: ${totalDeals}`}
                         </span>
-                      )}
-                    </h2>
-                    <div className="flex items-center mt-1">
-                      {(filterYear || statusFilter) && (
-                        <div className="ml-4 flex items-center space-x-2">
-                          <span className="text-xs text-slate-500">Filtered by:</span>
-                          {filterYear && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                              Year: {filterYear}
-                            </span>
-                          )}
-                          {statusFilter && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                              Status: {statusFilter === 'all' ? 'All' : statusFilter === 'open' ? 'Active' : statusFilter === 'commission' ? 'Commission' : 'Closed'}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      </h2>
+                      <p className="text-sm text-slate-600 mt-1">
+                        {(filterYear || statusFilter) && totalCount !== totalDeals && (
+                          <span className="text-slate-500">
+                            {totalCount} of {totalDeals} deals match your filters • 
+                          </span>
+                        )}
+                        Showing {totalCount === 0 ? '0' : `${((currentPage - 1) * itemsPerPage) + 1}-${Math.min(currentPage * itemsPerPage, totalCount)}`} of {totalCount} deal{totalCount !== 1 ? 's' : ''}
+                      </p>
                     </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    {(filterYear || statusFilter) && (
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-slate-500">Filtered by:</span>
+                        {filterYear && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                            Year: {filterYear}
+                          </span>
+                        )}
+                        {statusFilter && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                            Status: {statusFilter === 'open' ? 'Active' : statusFilter === 'commission' ? 'Commission' : 'Closed'}
+                          </span>
+                        )}
+                        {filterYear && !statusFilter && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                            All deals in {filterYear}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="p-6">
-                {filteredDeals.length === 0 ? (
+                {totalCount === 0 ? (
                   <div className="text-center py-16">
                     <div className="w-20 h-20 bg-slate-100 rounded mx-auto mb-6 flex items-center justify-center">
                       <div className="w-10 h-10 border-2 border-slate-300 rounded"></div>
                     </div>
                     <h3 className="text-xl font-medium text-slate-900 mb-3">
-                      {deals.length === 0 ? 'No deals available' : 'No deals match your filters'}
+                      {totalDeals === 0 ? 'No deals available' : 'No deals match your filters'}
                     </h3>
                     <p className="text-slate-600 mb-8 max-w-md mx-auto">
-                      {deals.length === 0 
+                      {totalDeals === 0 
                         ? 'Get started by creating your first property deal to begin tracking your transactions and managing your portfolio.'
                         : 'Try adjusting your filter criteria to see more deals.'
                       }
                     </p>
-                    {deals.length === 0 && (user?.role === 'admin' || user?.role === 'auditor') && (
+                    {totalDeals === 0 && (user?.role === 'admin' || user?.role === 'auditor') && (
                       <Link href="/deals/new">
                         <span className="flex items-center rounded bg-slate-900 px-6 py-3 text-sm font-medium text-white  hover:bg-slate-800 cursor-pointer ">
                           Create Your First Deal
                         </span>
                       </Link>
                     )}
-                    {deals.length > 0 && (
+                    {totalCount === 0 && totalDeals > 0 && (
                       <button
                         onClick={resetFilters}
                         className="flex items-center rounded bg-slate-900 px-6 py-3 text-sm font-medium text-white hover:bg-slate-800 cursor-pointer mx-auto"
@@ -374,7 +388,21 @@ export default function Dashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
-                        {filteredDeals.slice(0, 10).map((deal) => (
+                        {tableLoading ? (
+                          // Loading state for table - single row with centered spinner
+                          <tr className="h-[365px]">
+                            <td className="px-6 py-4" colSpan="8">
+                              <div className="flex items-center justify-center">
+                                <div className="text-center">
+                                  <div className="w-8 h-8 border-3 border-slate-300 border-t-slate-600 rounded-full animate-spin mx-auto mb-2"></div>
+                                  <p className="text-sm text-slate-600">Loading deals...</p>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          <>
+                            {deals.map((deal) => (
                           <tr 
                             key={deal.id} 
                             className="hover:bg-slate-50 cursor-pointer transition-colors"
@@ -446,8 +474,82 @@ export default function Dashboard() {
                             </td>
                           </tr>
                         ))}
+
+                        {/* Fill empty rows to maintain consistent table height */}
+                        {!tableLoading && Array.from({ length: itemsPerPage - deals.length }, (_, index) => (
+                          <tr key={`empty-${index}`} className="h-[73px]">
+                            <td className="px-6 py-4 w-48">&nbsp;</td>
+                            <td className="px-6 py-4 w-32">&nbsp;</td>
+                            <td className="px-6 py-4 w-40">&nbsp;</td>
+                            <td className="px-6 py-4 w-32">&nbsp;</td>
+                            <td className="px-6 py-4 w-24">&nbsp;</td>
+                            <td className="px-6 py-4 w-32">&nbsp;</td>
+                            <td className="px-6 py-4 w-24">&nbsp;</td>
+                            <td className="px-6 py-4 w-24">&nbsp;</td>
+                          </tr>
+                        ))}
+                        </>
+                        )}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="bg-white rounded-lg shadow-sm border border-slate-200 px-6 py-4 mt-4">
+                    {/* Pagination Buttons - Centered */}
+                    <div className="flex items-center justify-center space-x-2">
+                      {/* Previous Button */}
+                      <button
+                        onClick={() => {
+                          if (tableLoading || currentPage === 1) return
+                          const newPage = currentPage - 1
+                          console.log('Going to previous page:', newPage)
+                          setCurrentPage(newPage)
+                        }}
+                        disabled={currentPage === 1 || tableLoading}
+                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                      >
+                        Previous
+                      </button>
+
+                      {/* Page Numbers */}
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            onClick={() => {
+                              if (tableLoading || pageNum === currentPage) return
+                              console.log('Going to page:', pageNum)
+                              setCurrentPage(pageNum)
+                            }}
+                            disabled={tableLoading}
+                            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 min-w-[40px] disabled:opacity-50 disabled:cursor-not-allowed ${
+                              currentPage === pageNum
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Next Button */}
+                      <button
+                        onClick={() => {
+                          if (tableLoading || currentPage === totalPages) return
+                          const newPage = currentPage + 1
+                          console.log('Going to next page:', newPage)
+                          setCurrentPage(newPage)
+                        }}
+                        disabled={currentPage === totalPages || tableLoading}
+                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

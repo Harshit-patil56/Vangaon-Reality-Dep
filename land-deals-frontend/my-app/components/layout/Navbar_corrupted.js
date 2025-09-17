@@ -2,7 +2,31 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Menu, X, User, LogOut } from "lucide-react";
-import { hasPermission, PERMISSIONS } from "../../lib/permissions";
+import { hasPer              {hasPermission(user, PERMISSIONS.PAYMENTS_VIEW) && user?.role !== 'user' && (
+                <Link 
+                  href="/payments" 
+                  className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  Payments
+                </Link>
+              )}
+
+              {hasPermission(user, PERMISSIONS.OWNERS_VIEW) && user?.role !== 'user' && (
+                <Link 
+                  href="/owners" 
+                  className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 715.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 919.288 0M15 7a3 3 0 11-6 0 3 3 0 616 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  Owners
+                </Link>
+              )}n, PERMISSIONS } from "../../lib/permissions";
 
 export default function Navbar({ user, onLogout }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -27,16 +51,31 @@ export default function Navbar({ user, onLogout }) {
           </div>
 
           <div className="hidden lg:flex items-center space-x-8">
-            <Link href="/dashboard" className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
-              Dashboard
-            </Link>
-            <Link href="/owners" className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
-              Owners
-            </Link>
-            <Link href="/investors" className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
-              Investors
-            </Link>
-            {hasPermission(user, PERMISSIONS.PAYMENTS_VIEW) && (
+            {/* Dashboard - only show for admin/auditor */}
+            {user?.role !== 'user' && (
+              <Link href="/dashboard" className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
+                Dashboard
+              </Link>
+            )}
+            {/* Owners - only show for admin/auditor */}
+            {user?.role !== 'user' && (
+              <Link href="/owners" className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
+                Owners
+              </Link>
+            )}
+            {/* Investors - only show for admin/auditor */}
+            {user?.role !== 'user' && (
+              <Link href="/investors" className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
+                Investors
+              </Link>
+            )}
+            {/* My Portfolio - only show for regular users */}
+            {user?.role === 'user' && user?.investor_id && (
+              <Link href={`/investors/${user.investor_id}`} className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
+                My Portfolio
+              </Link>
+            )}
+            {hasPermission(user, PERMISSIONS.PAYMENTS_VIEW) && user?.role !== 'user' && (
               <Link href="/payments" className="text-slate-700 hover:text-slate-900 font-medium transition-colors duration-200">
                 Payments
               </Link>
@@ -91,23 +130,64 @@ export default function Navbar({ user, onLogout }) {
             </div>
 
             <div className="space-y-2">
-              <Link 
-                href="/dashboard" 
-                className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
-                onClick={() => setMenuOpen(false)}
-              >
-                <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m8 5 4-4 4 4" />
-                </svg>
-                Dashboard
-              </Link>
+              {/* Dashboard - only show for admin/auditor */}
+              {user?.role !== 'user' && (
+                <Link 
+                  href="/dashboard" 
+                  className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m8 5 4-4 4 4" />
+                  </svg>
+                  Dashboard
+                </Link>
+              )}
 
-              <Link 
-                href="/owners" 
-                className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
-                onClick={() => setMenuOpen(false)}
-              >
+              {/* Owners - only show for admin/auditor */}
+              {user?.role !== 'user' && (
+                <Link 
+                  href="/owners" 
+                  className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  Owners
+                </Link>
+              )}
+
+              {/* Investors - only show for admin/auditor */}
+              {user?.role !== 'user' && (
+                <Link 
+                  href="/investors" 
+                  className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                  </svg>
+                  Investors
+                </Link>
+              )}
+
+              {/* My Portfolio - only show for regular users */}
+              {user?.role === 'user' && user?.investor_id && (
+                <Link 
+                  href={`/investors/${user.investor_id}`} 
+                  className="flex items-center px-4 py-3 text-slate-700 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-all duration-200 font-medium"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 715 0z" />
+                  </svg>
+                  My Portfolio
+                </Link>
+              )}
+
+              {hasPermission(user, PERMISSIONS.PAYMENTS_VIEW) && user?.role !== 'user' && (
                 <svg className="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>

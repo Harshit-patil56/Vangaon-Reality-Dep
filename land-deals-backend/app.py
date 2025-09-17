@@ -1674,6 +1674,155 @@ def create_investor_to_owner_payment(current_user, deal_id):
             conn.close()
 
 
+@app.route('/api/deals/<int:deal_id>/miscellaneous-summary', methods=['GET'])
+@token_required
+def get_miscellaneous_summary(current_user, deal_id):
+    """Get miscellaneous payments summary for all investors and owners in a deal"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get all investors for this deal
+        cursor.execute("""
+            SELECT id, investor_name 
+            FROM investors 
+            WHERE deal_id = %s 
+            ORDER BY id
+        """, (deal_id,))
+        investors = cursor.fetchall()
+        
+        # Get all owners for this deal
+        cursor.execute("""
+            SELECT id, name 
+            FROM owners 
+            WHERE deal_id = %s 
+            ORDER BY id
+        """, (deal_id,))
+        owners = cursor.fetchall()
+        
+        # Calculate miscellaneous amounts for each investor
+        investor_misc_summary = []
+        for investor in investors:
+            investor_id = investor['id']
+            investor_name = investor['investor_name']
+            
+            # Get miscellaneous payments made by this investor
+            # Include multiple matching strategies for robustness
+            cursor.execute("""
+                SELECT 
+                    p.id,
+                    p.amount,
+                    p.payment_date,
+                    p.status,
+                    p.payment_type,
+                    p.notes,
+                    p.description,
+                    p.reference
+                FROM payments p
+                WHERE p.deal_id = %s 
+                AND p.status = 'completed'
+                AND p.payment_type != 'land_purchase'
+                AND (
+                    p.paid_by = %s 
+                    OR p.paid_by = %s 
+                    OR p.paid_by = %s
+                )
+                ORDER BY p.payment_date DESC
+            """, (deal_id, str(investor_id), f"investor_{investor_id}", investor_name))
+            misc_payments = cursor.fetchall()
+            
+            # Calculate total miscellaneous amount
+            total_miscellaneous = sum(float(mp['amount']) for mp in misc_payments)
+            
+            # Format miscellaneous payments for response
+            miscellaneous_payments = []
+            for mp in misc_payments:
+                miscellaneous_payments.append({
+                    'payment_id': mp['id'],
+                    'amount': float(mp['amount']),
+                    'payment_date': mp['payment_date'].isoformat() if mp['payment_date'] else None,
+                    'payment_type': mp['payment_type'],
+                    'notes': mp['notes'],
+                    'description': mp['description'],
+                    'reference': mp['reference'],
+                    'status': mp['status']
+                })
+            
+            investor_misc_summary.append({
+                'investor_id': investor_id,
+                'investor_name': investor_name,
+                'total_miscellaneous': total_miscellaneous,
+                'miscellaneous_payments': miscellaneous_payments
+            })
+        
+        # Calculate miscellaneous amounts for each owner
+        owner_misc_summary = []
+        for owner in owners:
+            owner_id = owner['id']
+            owner_name = owner['name']
+            
+            # Get miscellaneous payments made by this owner
+            cursor.execute("""
+                SELECT 
+                    p.id,
+                    p.amount,
+                    p.payment_date,
+                    p.status,
+                    p.payment_type,
+                    p.notes,
+                    p.description,
+                    p.reference
+                FROM payments p
+                WHERE p.deal_id = %s 
+                AND p.status = 'completed'
+                AND p.payment_type != 'land_purchase'
+                AND (
+                    p.paid_by = %s 
+                    OR p.paid_by = %s 
+                    OR p.paid_by = %s
+                )
+                ORDER BY p.payment_date DESC
+            """, (deal_id, str(owner_id), f"owner_{owner_id}", owner_name))
+            misc_payments = cursor.fetchall()
+            
+            # Calculate total miscellaneous amount
+            total_miscellaneous = sum(float(mp['amount']) for mp in misc_payments)
+            
+            # Format miscellaneous payments for response
+            miscellaneous_payments = []
+            for mp in misc_payments:
+                miscellaneous_payments.append({
+                    'payment_id': mp['id'],
+                    'amount': float(mp['amount']),
+                    'payment_date': mp['payment_date'].isoformat() if mp['payment_date'] else None,
+                    'payment_type': mp['payment_type'],
+                    'notes': mp['notes'],
+                    'description': mp['description'],
+                    'reference': mp['reference'],
+                    'status': mp['status']
+                })
+            
+            owner_misc_summary.append({
+                'owner_id': owner_id,
+                'owner_name': owner_name,
+                'total_miscellaneous': total_miscellaneous,
+                'miscellaneous_payments': miscellaneous_payments
+            })
+        
+        return jsonify({
+            'deal_id': deal_id,
+            'investors': investor_misc_summary,
+            'owners': owner_misc_summary
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting miscellaneous summary: {e}")
+        return jsonify({'error': 'Failed to get miscellaneous summary'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
 @app.route('/api/deals/<int:deal_id>/payment-tracking', methods=['GET'])
 @token_required
 def get_payment_tracking_data(current_user, deal_id):
@@ -1743,6 +1892,42 @@ def get_payment_tracking_data(current_user, deal_id):
             total_received = sum(float(p['amount']) for p in owner_payments)
             remaining_amount = max(0, expected_amount - total_received)
             
+            # Calculate miscellaneous payments made by this owner
+            # Get all payments where this owner paid and payment_type is NOT 'land_purchase'
+            cursor.execute("""
+                SELECT 
+                    p.id,
+                    p.amount,
+                    p.payment_date,
+                    p.status,
+                    p.payment_type,
+                    p.notes,
+                    p.description
+                FROM payments p
+                WHERE p.deal_id = %s 
+                AND p.status = 'completed'
+                AND p.payment_type != 'land_purchase'
+                AND (p.paid_by = %s OR p.paid_by = %s)
+                ORDER BY p.payment_date DESC
+            """, (deal_id, str(owner_id), owner['name']))
+            misc_payments = cursor.fetchall()
+            
+            # Calculate total miscellaneous amount
+            total_miscellaneous = sum(float(mp['amount']) for mp in misc_payments)
+            
+            # Format miscellaneous payments for response
+            miscellaneous_payments = []
+            for mp in misc_payments:
+                miscellaneous_payments.append({
+                    'payment_id': mp['id'],
+                    'amount': float(mp['amount']),
+                    'payment_date': mp['payment_date'].isoformat() if mp['payment_date'] else None,
+                    'payment_type': mp['payment_type'],
+                    'notes': mp['notes'],
+                    'description': mp['description'],
+                    'status': mp['status']
+                })
+            
             # Get investor breakdown
             investor_breakdown = {}
             for payment in owner_payments:
@@ -1770,6 +1955,8 @@ def get_payment_tracking_data(current_user, deal_id):
                 'expected_amount': expected_amount,
                 'total_received': total_received,
                 'remaining_amount': remaining_amount,
+                'total_miscellaneous': total_miscellaneous,
+                'miscellaneous_payments': miscellaneous_payments,
                 'investor_breakdown': list(investor_breakdown.values())
             })
         
@@ -1783,6 +1970,42 @@ def get_payment_tracking_data(current_user, deal_id):
             investor_payments = [p for p in payments if p['investor_id'] == investor_id]
             total_paid = sum(float(p['amount']) for p in investor_payments)
             remaining_obligation = max(0, investment_amount - total_paid)
+            
+            # Calculate miscellaneous payments made by this investor
+            # Get all payments where this investor paid and payment_type is NOT 'land_purchase'
+            cursor.execute("""
+                SELECT 
+                    p.id,
+                    p.amount,
+                    p.payment_date,
+                    p.status,
+                    p.payment_type,
+                    p.notes,
+                    p.description
+                FROM payments p
+                WHERE p.deal_id = %s 
+                AND p.status = 'completed'
+                AND p.payment_type != 'land_purchase'
+                AND (p.paid_by = %s OR p.paid_by = %s)
+                ORDER BY p.payment_date DESC
+            """, (deal_id, str(investor_id), investor['investor_name']))
+            misc_payments = cursor.fetchall()
+            
+            # Calculate total miscellaneous amount
+            total_miscellaneous = sum(float(mp['amount']) for mp in misc_payments)
+            
+            # Format miscellaneous payments for response
+            miscellaneous_payments = []
+            for mp in misc_payments:
+                miscellaneous_payments.append({
+                    'payment_id': mp['id'],
+                    'amount': float(mp['amount']),
+                    'payment_date': mp['payment_date'].isoformat() if mp['payment_date'] else None,
+                    'payment_type': mp['payment_type'],
+                    'notes': mp['notes'],
+                    'description': mp['description'],
+                    'status': mp['status']
+                })
             
             # Get owner breakdown
             owner_breakdown = {}
@@ -1810,6 +2033,8 @@ def get_payment_tracking_data(current_user, deal_id):
                 'investment_amount': investment_amount,
                 'total_paid': total_paid,
                 'remaining_obligation': remaining_obligation,
+                'total_miscellaneous': total_miscellaneous,
+                'miscellaneous_payments': miscellaneous_payments,
                 'owner_breakdown': list(owner_breakdown.values())
             })
         
@@ -2934,6 +3159,134 @@ def get_deals(current_user):
                     deal[key] = value.isoformat()
         
         return jsonify(deals)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+@app.route('/api/deals/paginated', methods=['GET'])
+@token_required
+def get_deals_paginated(current_user):
+    """Get deals with pagination and filtering support"""
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get query parameters
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 5))
+        year_filter = request.args.get('year')
+        status_filter = request.args.get('status')
+        
+        # Calculate offset
+        offset = (page - 1) * limit
+        
+        # Build WHERE clause for filters
+        where_conditions = []
+        params = []
+        
+        if year_filter:
+            where_conditions.append("YEAR(d.purchase_date) = %s")
+            params.append(year_filter)
+        
+        if status_filter and status_filter != 'all':
+            where_conditions.append("d.status = %s")
+            params.append(status_filter)
+        
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+        
+        # Get total count for pagination
+        count_query = f"""
+            SELECT COUNT(*) as total_count
+            FROM deals d 
+            {where_clause}
+        """
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()['total_count']
+        
+        # Get paginated deals
+        deals_query = f"""
+            SELECT d.*, u.full_name as created_by_name 
+            FROM deals d 
+            LEFT JOIN users u ON d.created_by = u.id 
+            {where_clause}
+            ORDER BY d.created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        cursor.execute(deals_query, params + [limit, offset])
+        deals = cursor.fetchall()
+        
+        # Convert datetime objects to strings for JSON serialization
+        for deal in deals:
+            for key, value in deal.items():
+                if isinstance(value, datetime):
+                    deal[key] = value.isoformat()
+        
+        # Calculate pagination info
+        total_pages = (total_count + limit - 1) // limit  # Ceiling division
+        
+        response_data = {
+            'deals': deals,
+            'pagination': {
+                'currentPage': page,
+                'totalPages': total_pages,
+                'totalCount': total_count,
+                'itemsPerPage': limit,
+                'hasNextPage': page < total_pages,
+                'hasPrevPage': page > 1
+            }
+        }
+        
+        return jsonify(response_data)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if connection:
+            connection.close()
+
+@app.route('/api/deals/stats', methods=['GET'])
+@token_required  
+def get_deals_stats(current_user):
+    """Get deal statistics for dashboard"""
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get status counts
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
+                SUM(CASE WHEN status = 'commission' THEN 1 ELSE 0 END) as commission
+            FROM deals
+        """)
+        stats = cursor.fetchone()
+        
+        # Get available years
+        cursor.execute("""
+            SELECT DISTINCT YEAR(purchase_date) as year 
+            FROM deals 
+            WHERE purchase_date IS NOT NULL 
+            ORDER BY year DESC
+        """)
+        years_result = cursor.fetchall()
+        years = [row['year'] for row in years_result]
+        
+        response_data = {
+            'total': stats['total'] or 0,
+            'active': stats['active'] or 0,
+            'closed': stats['closed'] or 0,
+            'commission': stats['commission'] or 0,
+            'years': years
+        }
+        
+        return jsonify(response_data)
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -4383,7 +4736,7 @@ def get_investor_details(current_user, investor_id):
                 d.status,
                 d.created_at,
                 i.investment_amount as deal_investment_amount,
-                i.investment_percentage as deal_investment_percentage,
+                i.percentage_share as deal_investment_percentage,
                 i.id as investor_record_id,
                 i.deal_id as investor_deal_id
             FROM deals d
@@ -4398,10 +4751,6 @@ def get_investor_details(current_user, investor_id):
             ORDER BY d.created_at DESC
         """, (investor_id, investor_id, investor['investor_name'], investor['mobile'], investor['mobile'], investor['email'], investor['email']))
         projects = cursor.fetchall()
-        
-        print(f"[DEBUG] Found {len(projects)} deal-investor relationships for investor {investor_id}")
-        for i, project in enumerate(projects):
-            print(f"[DEBUG] Deal {i+1}: ID={project.get('deal_id')}, Name={project.get('project_name')}, Investment%={project.get('deal_investment_percentage')}, Amount={project.get('deal_investment_amount')}, InvestorRecordID={project.get('investor_record_id')}")
         
         # Convert datetime objects for projects
         for item in projects:

@@ -103,6 +103,16 @@ export const dealAPI = {
     const cacheKey = 'deals_all'
     return cachedRequest(() => api.get('/deals'), cacheKey)
   },
+  // New paginated endpoint for chunked loading
+  getPaginated: (queryParams) => {
+    const cacheKey = `deals_paginated_${queryParams}`
+    return cachedRequest(() => api.get(`/deals/paginated?${queryParams}`), cacheKey)
+  },
+  // New statistics endpoint for dashboard
+  getStats: () => {
+    const cacheKey = 'deals_stats'
+    return cachedRequest(() => api.get('/deals/stats'), cacheKey)
+  },
   getById: (id) => {
     const cacheKey = `deals_${id}`
     return cachedRequest(() => api.get(`/deals/${id}`), cacheKey)
@@ -249,6 +259,7 @@ paymentsAPI.uploadProof = (dealId, paymentId, formData) => api.post(`/payments/$
 // Investor to Owner Payments
 paymentsAPI.createInvestorToOwnerPayment = (dealId, paymentData) => api.post(`/payments/${dealId}/investor-to-owner`, paymentData)
 paymentsAPI.getPaymentTrackingData = (dealId) => api.get(`/deals/${dealId}/payment-tracking`)
+paymentsAPI.getMiscellaneousSummary = (dealId) => api.get(`/deals/${dealId}/miscellaneous-summary`)
 
 // Admin user management
 export const adminAPI = {

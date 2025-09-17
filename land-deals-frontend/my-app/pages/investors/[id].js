@@ -191,18 +191,12 @@ export default function InvestorDetails() {
             Investment Summary
           </h2>
           
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1890ff', marginBottom: '4px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#52c41a', marginBottom: '4px' }}>
                 ₹{projects.reduce((total, project) => total + (project.investment_amount || 0), 0).toLocaleString()}
               </div>
               <div style={{ fontSize: '14px', color: '#666' }}>Total Investment Amount</div>
-            </div>
-            <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff4d4f', marginBottom: '4px' }}>
-                ₹{projects.reduce((total, project) => total + (project.investment_amount || 0), 0).toLocaleString()}
-              </div>
-              <div style={{ fontSize: '14px', color: '#666' }}>Pending Amount</div>
             </div>
             <div style={{ textAlign: 'center', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
               <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fa8c16', marginBottom: '4px' }}>
