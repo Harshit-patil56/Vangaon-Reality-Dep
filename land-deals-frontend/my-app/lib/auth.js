@@ -2,11 +2,11 @@
 import Cookies from 'js-cookie'
 import axios from 'axios'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
 export const login = async (username, password) => {
   try {
-    const response = await axios.post(`${API_BASE_URL}/login`, {
+    const response = await axios.post(`${API_BASE_URL}/api/login`, {
       username,
       password
     })
