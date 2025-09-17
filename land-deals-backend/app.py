@@ -209,6 +209,7 @@ app.config['UPLOAD_FOLDER'] = os.path.join(APP_ROOT, os.environ.get('UPLOAD_FOLD
 frontend_origins = [
     os.environ.get('FRONTEND_URL', 'http://localhost:3000'),
     'http://localhost:3000',  # Always allow localhost for development
+    'https://vangaon-reality-1.onrender.com',  # Production frontend
 ]
 CORS(app, origins=frontend_origins, supports_credentials=True, methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
      allow_headers=['Content-Type', 'Authorization', 'Range'],
