@@ -12,7 +12,7 @@ const CACHE_DURATION = 2 * 60 * 1000 // 2 minutes for faster development
 const getCacheKey = (url, config) => `${url}_${JSON.stringify(config?.params || {})}`
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: `${API_BASE_URL}/api`,
   timeout: 30000, // 30 second timeout
   headers: {
     'Content-Type': 'application/json',
