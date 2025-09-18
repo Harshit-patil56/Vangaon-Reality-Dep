@@ -67,7 +67,7 @@ export default function PaymentDealSelection() {
       {/* Page Header - Full Width */}
       <div className="w-full">
         <div className="px-6 py-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mobile-header-stack">
             <div className="flex items-center">
               <div>
                 <nav className="flex items-center space-x-2 text-sm text-slate-500 mb-2">
@@ -75,7 +75,7 @@ export default function PaymentDealSelection() {
                   <span>→</span>
                   <span className="text-slate-900">Select Deal</span>
                 </nav>
-                <h1 className="text-3xl font-bold text-slate-900">
+                <h1 className="text-3xl md:text-3xl text-2xl font-bold text-slate-900">
                   Add New Payment
                 </h1>
                 <div className="mt-2 flex items-center text-sm text-slate-500 space-x-4">
@@ -87,7 +87,7 @@ export default function PaymentDealSelection() {
                 </div>
               </div>
             </div>
-            <div className="flex space-x-3">
+            <div className="flex space-x-3 mobile-button-group">
               <Link href="/payments">
                 <span className="flex items-center rounded bg-white px-6 py-3 text-sm font-medium text-slate-900 border border-slate-300 hover:bg-slate-50 cursor-pointer">
                   Back to Payments
@@ -141,7 +141,7 @@ export default function PaymentDealSelection() {
                       if (!deal) return null
                       
                       return (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mobile-grid-cols-1">
                           <div>
                             <span className="text-slate-600">Project:</span>
                             <span className="ml-2 font-medium text-slate-900">{deal.project_name || deal.property_details || 'N/A'}</span>
@@ -171,7 +171,7 @@ export default function PaymentDealSelection() {
                 )}
 
                 {/* Action Buttons */}
-                <div className="flex justify-end space-x-3 pt-4">
+                <div className="flex justify-end space-x-3 pt-4 mobile-action-buttons">
                   <Link href="/payments">
                     <span className="px-6 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors cursor-pointer">
                       Cancel
@@ -193,3 +193,44 @@ export default function PaymentDealSelection() {
     </div>
   )
 }
+
+<style jsx>{`
+  @media (max-width: 767px) {
+    .mobile-header-stack {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    
+    .mobile-button-group {
+      flex-direction: column;
+      width: 100%;
+      gap: 0.5rem;
+    }
+    
+    .mobile-button-group > * {
+      width: 100%;
+      justify-content: center;
+    }
+    
+    .mobile-form-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .mobile-grid-cols-1 {
+      grid-template-columns: 1fr !important;
+    }
+    
+    .mobile-action-buttons {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    
+    .mobile-action-buttons > * {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+`}</style>

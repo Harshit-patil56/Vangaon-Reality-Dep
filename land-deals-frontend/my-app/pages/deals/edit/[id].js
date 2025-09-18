@@ -250,16 +250,6 @@ export default function EditDeal() {
 
   return (
     <>
-      <style jsx>{`
-        input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-        input[type="number"] {
-          -moz-appearance: textfield;
-        }
-      `}</style>
       <div className="min-h-screen bg-slate-50">
       {/* Navigation - Full Width */}
       <div className="bg-white shadow-sm border-b border-slate-200 w-full">
@@ -269,8 +259,8 @@ export default function EditDeal() {
       {/* Page Header - Full Width */}
       <div className="bg-white border-b border-slate-200 w-full">
         <div className="px-6 py-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
+          <div className="flex items-center justify-between mobile-header-stack">
+            <div className="flex items-center mobile-header-content">
               <Link href={`/deals/${id}`}>
                 <span className="mr-4 p-2 hover:bg-slate-200 rounded-lg transition-colors duration-200 cursor-pointer">
                   <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,7 +278,7 @@ export default function EditDeal() {
                 <p className="text-slate-600 mt-1">Update the deal information and related data</p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 mobile-button-group">
               <div className="text-sm text-slate-600">
                 <span className="font-medium">Deal ID:</span>
                 <span className="ml-2">#{id}</span>
@@ -307,8 +297,8 @@ export default function EditDeal() {
       </div>
 
       {/* Main Content - Full Width Grid Layout */}
-      <div className="w-full px-6 py-8">
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+      <div className="w-full px-6 py-8 mobile-content-padding">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 mobile-layout-stack">
           
           {/* Left Sidebar - Form Guidelines & Progress */}
           <div className="xl:col-span-1 space-y-6">
@@ -394,7 +384,7 @@ export default function EditDeal() {
                 </div>
                 
                 <div className="p-6 space-y-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mobile-form-grid">
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-2">
                         Project Name <span className="text-red-500">*</span>
@@ -986,6 +976,77 @@ export default function EditDeal() {
           </div>
         </div>
       </div>
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        input[type="number"] {
+          -moz-appearance: textfield;
+        }
+        
+        @media (max-width: 767px) {
+          .mobile-header-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-header-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-button-group {
+            flex-direction: column;
+            width: 100%;
+            gap: 0.5rem;
+          }
+          
+          .mobile-button-group > * {
+            width: 100%;
+            justify-content: center;
+          }
+          
+          .mobile-content-padding {
+            padding: 1rem;
+          }
+          
+          .mobile-layout-stack {
+            grid-template-columns: 1fr !important;
+            gap: 1rem;
+          }
+          
+          .mobile-form-grid {
+            grid-template-columns: 1fr !important;
+            gap: 1rem;
+          }
+          
+          /* Improve form inputs for mobile */
+          input, select, textarea {
+            min-height: 44px;
+            font-size: 16px;
+          }
+          
+          /* Responsive text sizes */
+          h1 {
+            font-size: 1.5rem !important;
+          }
+          
+          h2 {
+            font-size: 1.25rem !important;
+          }
+          
+          /* Stack form sections better */
+          .space-y-6 > * {
+            margin-bottom: 1.5rem !important;
+          }
+        }
+      `}</style>
       </div>
     </>
   );

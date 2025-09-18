@@ -272,7 +272,7 @@ export default function Investors() {
       {/* Page Header - Full Width */}
       <div className="w-full">
         <div className="px-6 py-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mobile-header-stack">
             <div className="flex items-center">
               <div>
                 <h1 className="text-3xl font-bold text-slate-900">Investors Management</h1>
@@ -280,7 +280,7 @@ export default function Investors() {
             </div>
 
             {user?.role === 'user' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mobile-notice-card">
                 <p className="text-sm text-blue-700 font-medium">Read-Only Access</p>
                 <p className="text-xs text-blue-600">You can view your investor information but cannot make changes</p>
               </div>
@@ -290,14 +290,14 @@ export default function Investors() {
       </div>
 
       {/* Main Content - Full Width Layout */}
-      <div className="w-full px-6 py-8 space-y-8">
+      <div className="w-full px-6 py-8 space-y-8 mobile-content-padding">
         
         {/* Search and Filters Section */}
         <div className="bg-white overflow-hidden shadow-sm rounded-lg border border-slate-200">
           <div className="p-6">
             {/* Header with count and starred toggle */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-6">
+            <div className="flex items-center justify-between mb-6 mobile-header-info">
+              <div className="flex items-center gap-6 mobile-info-stack">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-3">
                     {showStarredOnly ? 'Starred Investors' : 'All Investors'}
@@ -311,7 +311,7 @@ export default function Investors() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mobile-button-group">
                 {/* Starred Count */}
                 <span className="text-sm text-slate-600 flex items-center gap-1">
                   <svg className="w-4 h-4 text-yellow-500" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,7 +338,7 @@ export default function Investors() {
             </div>
 
             {/* Search and Filter Controls */}
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mobile-filters-stack">
               {/* Search Bar */}
               <div className="w-full lg:w-80">
                 <div className="relative">
@@ -498,7 +498,7 @@ export default function Investors() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto mobile-table-scroll">
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
@@ -816,6 +816,81 @@ export default function Investors() {
         message={`Are you sure you want to delete investor "${investorToDelete?.investor_name}"? This action cannot be undone.`}
         itemType="investor"
       />
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          .mobile-header-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-notice-card {
+            width: 100%;
+            text-align: center;
+          }
+          
+          .mobile-content-padding {
+            padding: 1rem;
+          }
+          
+          .mobile-header-info {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-info-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+          }
+          
+          .mobile-button-group {
+            flex-direction: column;
+            width: 100%;
+            gap: 0.5rem;
+          }
+          
+          .mobile-button-group > * {
+            width: 100%;
+            justify-content: center;
+          }
+          
+          .mobile-filters-stack {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+          }
+          
+          .mobile-table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          
+          /* Make tables responsive */
+          table {
+            min-width: 600px;
+            font-size: 14px;
+          }
+          
+          /* Responsive text sizes */
+          h1 {
+            font-size: 1.5rem !important;
+          }
+          
+          h3 {
+            font-size: 1.125rem !important;
+          }
+          
+          /* Improve input touch targets */
+          input, select, button {
+            min-height: 44px;
+            font-size: 16px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

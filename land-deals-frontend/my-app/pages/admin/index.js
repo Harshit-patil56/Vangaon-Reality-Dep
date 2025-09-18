@@ -65,8 +65,8 @@ import {
       {/* Page Header */}
       <div className="w-full">
         <div className="px-6 py-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
+          <div className="flex items-center justify-between mobile-header-stack">
+            <div className="flex items-center mobile-header-content">
               <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                 <Shield className="w-6 h-6 text-red-600" />
               </div>
@@ -80,7 +80,7 @@ import {
       </div>
 
       {/* Main Content */}
-      <div className="w-full px-6 py-8 space-y-8">
+      <div className="w-full px-6 py-8 space-y-8 mobile-content-padding">
         
         {/* Admin Modules */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200">
@@ -90,7 +90,7 @@ import {
           </div>
           
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mobile-admin-grid">
               {adminModules.map((module, index) => {
                 const IconComponent = module.icon;
                 return (
@@ -119,6 +119,56 @@ import {
           </div>
         </div>
       </div>
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          .mobile-header-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-header-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-content-padding {
+            padding: 1rem;
+          }
+          
+          .mobile-admin-grid {
+            grid-template-columns: 1fr !important;
+            gap: 1rem;
+          }
+          
+          /* Responsive text sizes */
+          h1 {
+            font-size: 1.5rem !important;
+          }
+          
+          h3 {
+            font-size: 1.125rem !important;
+          }
+          
+          h4 {
+            font-size: 1rem !important;
+          }
+          
+          /* Make cards more mobile-friendly */
+          .block.p-6 {
+            padding: 1rem !important;
+          }
+          
+          /* Improve icon spacing on mobile */
+          .w-12.h-12 {
+            width: 2.5rem !important;
+            height: 2.5rem !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

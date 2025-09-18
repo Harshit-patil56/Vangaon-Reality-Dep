@@ -790,7 +790,7 @@ export default function NewPayment() {
       {/* Page Header - Full Width */}
       <div className="w-full">
         <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mobile-header-stack">
             <div className="flex items-center">
               <div>
                 <nav className="flex items-center space-x-2 text-sm text-slate-500 mb-2">
@@ -802,7 +802,7 @@ export default function NewPayment() {
                   <span>→</span>
                   <span className="text-slate-900">New Payment</span>
                 </nav>
-                <h1 className="text-3xl font-bold text-slate-900">
+                <h1 className="text-3xl md:text-3xl text-2xl font-bold text-slate-900">
                   Create New Payment
                 </h1>
                 <div className="mt-2 flex items-center text-sm text-slate-500 space-x-4">
@@ -816,7 +816,7 @@ export default function NewPayment() {
                 </div>
               </div>
             </div>
-            <div className="flex space-x-3">
+            <div className="flex space-x-3 mobile-button-group">
               <button
                 type="button"
                 onClick={() => router.push(`/deals/${dealId}?section=payments`)}
@@ -837,7 +837,7 @@ export default function NewPayment() {
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Single Form - All sections combined */}
-            <div className="bg-white rounded border border-slate-200 p-6">
+            <div className="bg-white rounded border border-slate-200 p-6 mobile-form-section">
               <h2 className="text-xl font-semibold text-slate-900 mb-6">Payment Information</h2>
               
               {/* Payment Parties - Moved to top */}
@@ -845,7 +845,7 @@ export default function NewPayment() {
                 <h3 className="text-lg font-medium text-slate-900 border-b border-slate-200 pb-2">Payment Parties</h3>
                 
                 {/* Payer and Payer Bank Details in same row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mobile-party-selection">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-2">
                       Payer <span className="text-red-500">*</span>
@@ -1480,7 +1480,7 @@ export default function NewPayment() {
               </div>
 
               {/* Form Actions */}
-              <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-slate-200">
+              <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-slate-200 mobile-action-buttons">
                 <Link
                   href={`/payments`}
                   className="px-6 py-2 border border-slate-300 text-slate-700 rounded hover:bg-slate-50"
@@ -1510,3 +1510,56 @@ export default function NewPayment() {
     </>
   )
 }
+
+<style jsx>{`
+  @media (max-width: 767px) {
+    .mobile-header-stack {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    
+    .mobile-button-group {
+      flex-direction: column;
+      width: 100%;
+      gap: 0.5rem;
+    }
+    
+    .mobile-button-group > * {
+      width: 100%;
+      justify-content: center;
+    }
+    
+    .mobile-form-grid {
+      grid-template-columns: 1fr !important;
+      gap: 1rem;
+    }
+    
+    .mobile-form-section {
+      padding: 1rem;
+    }
+    
+    .mobile-action-buttons {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    
+    .mobile-action-buttons > * {
+      width: 100%;
+      justify-content: center;
+      text-align: center;
+    }
+    
+    .mobile-installment-grid {
+      grid-template-columns: 1fr !important;
+    }
+    
+    .mobile-bank-details {
+      grid-template-columns: 1fr !important;
+    }
+    
+    .mobile-party-selection {
+      grid-template-columns: 1fr !important;
+    }
+  }
+`}</style>

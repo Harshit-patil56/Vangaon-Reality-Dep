@@ -26,8 +26,8 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 mobile-login-container">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md mobile-login-header">
         {/* Logo Section */}
         <div className="flex justify-center">
           <div className="w-24 h-24 flex items-center justify-center">
@@ -49,8 +49,8 @@ export default function Login() {
         </div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 shadow-lg rounded border border-slate-200 sm:px-10">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md mobile-login-form">
+        <div className="bg-white py-8 px-6 shadow-lg rounded border border-slate-200 sm:px-10 mobile-form-card">
           <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
             
             {/* Username Field */}
@@ -158,6 +158,71 @@ export default function Login() {
           </form>
         </div>
       </div>
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          .mobile-login-container {
+            padding: 1rem;
+          }
+          
+          .mobile-login-header {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+          }
+          
+          .mobile-login-form {
+            width: 100%;
+            max-width: none;
+            margin: 1.5rem 0 0 0;
+          }
+          
+          .mobile-form-card {
+            padding: 1.5rem;
+            margin: 0;
+            border-radius: 0.5rem;
+          }
+          
+          /* Improve input touch targets */
+          input {
+            min-height: 48px;
+            font-size: 16px;
+            padding: 0.75rem 2.5rem 0.75rem 2.5rem;
+          }
+          
+          button {
+            min-height: 48px;
+            font-size: 16px;
+            padding: 0.75rem 1rem;
+          }
+          
+          /* Responsive logo */
+          .w-24.h-24 {
+            width: 4rem !important;
+            height: 4rem !important;
+          }
+          
+          /* Responsive typography */
+          h1 {
+            font-size: 1.75rem !important;
+          }
+          
+          /* Make form more mobile-friendly */
+          .space-y-6 > * {
+            margin-bottom: 1rem !important;
+          }
+          
+          /* Better spacing on mobile */
+          .mt-6 {
+            margin-top: 1rem !important;
+          }
+          
+          .mt-8 {
+            margin-top: 1.5rem !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

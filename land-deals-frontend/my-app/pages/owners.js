@@ -269,7 +269,7 @@ export default function Owners() {
       {/* Page Header - Full Width */}
       <div className="w-full">
         <div className="px-6 py-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mobile-header-stack">
             <div className="flex items-center">
               <div>
                 <h1 className="text-3xl font-bold text-slate-900">
@@ -278,7 +278,7 @@ export default function Owners() {
               </div>
             </div>
             {user?.role === 'user' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mobile-notice-card">
                 <p className="text-sm text-blue-700 font-medium">Read-Only Access</p>
                 <p className="text-xs text-blue-600">You can view your owner information but cannot make changes</p>
               </div>
@@ -288,7 +288,7 @@ export default function Owners() {
       </div>
 
       {/* Main Content - Full Width Layout */}
-      <div className="w-full px-6 py-8 space-y-8">
+      <div className="w-full px-6 py-8 space-y-8 mobile-content-padding">
         
         {/* Search and Filter Controls */}
         <div className="bg-white overflow-hidden shadow-sm rounded-lg border border-slate-200">
@@ -786,6 +786,55 @@ export default function Owners() {
           }
         }}
       />
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          .mobile-header-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-notice-card {
+            width: 100%;
+            text-align: center;
+          }
+          
+          .mobile-content-padding {
+            padding: 1rem;
+          }
+          
+          /* Make tables responsive */
+          .overflow-x-auto {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          
+          table {
+            min-width: 600px;
+            font-size: 14px;
+          }
+          
+          /* Responsive text sizes */
+          h1 {
+            font-size: 1.5rem !important;
+          }
+          
+          /* Improve button and input touch targets */
+          input, select, button {
+            min-height: 44px;
+            font-size: 16px;
+          }
+          
+          /* Stack filter controls on mobile */
+          .flex.items-center.justify-between {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+        }
+      `}</style>
     </div>
   );
 }

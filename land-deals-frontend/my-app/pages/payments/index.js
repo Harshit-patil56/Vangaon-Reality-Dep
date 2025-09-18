@@ -440,16 +440,15 @@ export default function PaymentsIndex() {
       {/* Page Header - Full Width */}
       <div className="w-full">
         <div className="px-6 py-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mobile-header-stack">
             <div className="flex items-center">
               <div>
-                <h1 className="text-3xl font-bold text-slate-900">
+                <h1 className="text-3xl md:text-3xl text-2xl font-bold text-slate-900">
                   Payment Management Dashboard
                 </h1>
               </div>
             </div>
-            <div className="flex space-x-3">
-              {hasPermission(user, PERMISSIONS.PAYMENTS_CREATE) && (
+            <div className="flex space-x-3 mobile-button-group">{hasPermission(user, PERMISSIONS.PAYMENTS_CREATE) && (
                 <button
                   onClick={() => {
                     if (viewMode === 'all') {
@@ -479,7 +478,7 @@ export default function PaymentsIndex() {
         {/* View Mode Toggle */}
         <div className="mb-6">
           <div className="bg-white rounded border border-slate-200 p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mobile-view-toggle">
               <div className="flex items-center space-x-4">
                 <label className="text-sm font-medium text-slate-700">View Mode:</label>
                 <div className="flex bg-slate-100 rounded p-1">
@@ -528,7 +527,7 @@ export default function PaymentsIndex() {
         </div>
 
         {/* Payment Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8 mobile-stats-grid">
           <div className="bg-white rounded border border-slate-200 p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -593,7 +592,7 @@ export default function PaymentsIndex() {
         {/* Enhanced Filters and Search */}
         <div className="bg-white rounded border border-slate-200 mb-6">
           <div className="p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mobile-filters-stack">
               {/* Search */}
               <div className="lg:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Search</label>
@@ -668,7 +667,7 @@ export default function PaymentsIndex() {
             </div>
 
             {/* Sort and Results Info */}
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200">
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200 mobile-view-toggle">
               <div className="flex items-center space-x-4">
                 <label className="text-sm font-medium text-slate-700">Sort by:</label>
                 <select
@@ -704,8 +703,8 @@ export default function PaymentsIndex() {
                 <p className="text-slate-600">Please wait while we fetch your payment data</p>
               </div>
             ) : filteredPayments.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-x-auto mobile-table-scroll">
+                <table className="w-full mobile-table">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -884,6 +883,78 @@ export default function PaymentsIndex() {
         message={`Are you sure you want to delete this payment of ₹${paymentToDelete?.amount?.toLocaleString('en-IN')}? This action cannot be undone.`}
         itemType="payment"
       />
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          .mobile-header-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-stats-grid {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+          }
+          
+          .mobile-stats-2col {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          
+          .mobile-filters-stack {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+          }
+          
+          .mobile-filter-row {
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+          }
+          
+          .mobile-button-group {
+            flex-direction: column;
+            gap: 0.5rem;
+            width: 100%;
+          }
+          
+          .mobile-button-group > * {
+            width: 100%;
+            justify-content: center;
+          }
+          
+          .mobile-table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          
+          .mobile-table {
+            min-width: 800px;
+          }
+          
+          .mobile-view-toggle {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 1rem;
+          }
+          
+          .mobile-payment-card {
+            padding: 1rem;
+          }
+          
+          .mobile-payment-info {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+          }
+          
+          .mobile-payment-badges {
+            flex-wrap: wrap;
+            gap: 0.25rem;
+          }
+        }
+      `}</style>
     </div>
   )
 }

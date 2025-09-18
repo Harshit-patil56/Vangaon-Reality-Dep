@@ -706,13 +706,13 @@ export default function ViewDeal() {
         {/* Header */}
         <div className="w-full print-hide">
           <div className="px-6 py-8">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center justify-between w-full">
+            <div className="flex items-center justify-between mobile-header-stack">
+              <div className="flex items-center justify-between w-full mobile-header-content">
                 <div className="flex-1">
                   <h1 className="text-3xl font-bold text-slate-900">{deal.project_name}</h1>
                   <p className="text-slate-600 mt-1">Deal Details - {deal.survey_number}</p>
                 </div>
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-3 mobile-button-group">
                   <span className={`px-3 py-1 rounded text-sm font-medium ${
                     deal.status === 'open' 
                       ? 'bg-green-100 text-green-800' 
@@ -748,7 +748,7 @@ export default function ViewDeal() {
         {/* Navigation Tabs */}
         <div className="bg-white border-b border-slate-200 print-hide">
           <div className="px-6">
-            <nav className="flex space-x-8 justify-center">
+            <nav className="flex space-x-8 justify-center mobile-nav-tabs">
               {sections.map((section) => (
                 <button
                   key={section.id}
@@ -767,7 +767,7 @@ export default function ViewDeal() {
         </div>
 
         {/* Content */}
-        <div className="px-6 py-8">
+        <div className="px-6 py-8 mobile-content-padding">
           {activeSection === 'project' && (
             <ProjectDetailsSection deal={deal} owners={owners} investors={investors} loading={loading} payments={payments} miscellaneousData={miscellaneousData} />
           )}
@@ -3731,7 +3731,13 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
     try {
       await onSellingAmountChange(undefined, localSoldPrice || null);
       setIsEditingSoldPrice(false);
+      
+      // Don't call onUpdate() - the parent updateSellingAmount function already
+      // updates both setSoldPrice() and deal state correctly. Calling onUpdate()
+      // creates a race condition with server data fetch.
     } catch {
+      // Reset local state on error
+      setLocalSoldPrice(soldPrice);
       // Error handling is done in the parent component
     }
   };
@@ -4599,6 +4605,164 @@ function ProfitLossSection({ deal, payments, investors }) {
           </div>
         </div>
       </div>
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          /* Navigation tabs - horizontal scrolling */
+          .mobile-nav-tabs {
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+          }
+          
+          .mobile-nav-tabs::-webkit-scrollbar {
+            display: none;
+          }
+          
+          .mobile-nav-tabs button {
+            flex-shrink: 0;
+            white-space: nowrap;
+            min-width: 100px;
+          }
+          
+          /* Header responsive */
+          .mobile-header-content {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 1rem;
+          }
+          
+          .mobile-button-group {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+          }
+          
+          /* Content padding adjustments */
+          .mobile-content-padding {
+            padding: 1rem 0.75rem;
+          }
+          
+          /* Grid layouts to single column */
+          .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3,
+          .grid.md\\:grid-cols-2.lg\\:grid-cols-3,
+          .grid.lg\\:grid-cols-3,
+          .grid.md\\:grid-cols-2,
+          .grid.grid-cols-3,
+          .grid.grid-cols-2 {
+            grid-template-columns: 1fr !important;
+            gap: 1rem !important;
+          }
+          
+          /* Flex layouts - stack on mobile */
+          .flex.items-center.space-x-4 {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 1rem;
+          }
+          
+          .flex.items-center.space-x-3 {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 0.75rem;
+          }
+          
+          .flex.items-center.justify-between {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 1rem;
+          }
+          
+          .flex.space-x-2 {
+            gap: 0.5rem;
+            flex-wrap: wrap;
+          }
+          
+          /* Tables responsive */
+          .overflow-x-auto {
+            margin: 0 -0.75rem;
+            padding: 0 0.75rem;
+          }
+          
+          table {
+            font-size: 12px;
+            min-width: 600px;
+          }
+          
+          th, td {
+            padding: 0.375rem !important;
+            font-size: 12px !important;
+          }
+          
+          /* Owner/Investor cards mobile layout */
+          .flex.items-center.gap-3 {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+          }
+          
+          .min-w-\\[100px\\] {
+            min-width: auto !important;
+          }
+          
+          /* Typography scaling */
+          .text-3xl {
+            font-size: 1.5rem !important;
+          }
+          
+          .text-xl {
+            font-size: 1.25rem !important;
+          }
+          
+          .text-lg {
+            font-size: 1.125rem !important;
+          }
+          
+          /* Forms and inputs */
+          input, select, textarea {
+            font-size: 16px !important;
+          }
+          
+          /* Button improvements */
+          button {
+            min-height: 44px;
+          }
+          
+          /* Spacing adjustments */
+          .p-6 {
+            padding: 1rem !important;
+          }
+          
+          .px-6 {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+          }
+          
+          .py-8 {
+            padding-top: 1rem !important;
+            padding-bottom: 1rem !important;
+          }
+          
+          /* Section spacing */
+          .space-y-6 > * + * {
+            margin-top: 1rem !important;
+          }
+          
+          .mb-6 {
+            margin-bottom: 1rem !important;
+          }
+          
+          /* Text wrapping */
+          .text-sm,
+          .text-xs,
+          p,
+          span {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+          }
+        }
+      `}</style>
     </div>
   );
 }

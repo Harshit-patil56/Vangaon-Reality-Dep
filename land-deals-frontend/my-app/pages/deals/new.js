@@ -510,13 +510,13 @@ export default function NewDeal() {
       {/* Page Header */}
       <div className="w-full">
         <div className="px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mobile-header-stack">
             <div className="flex items-center">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">Create New Deal</h1>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 mobile-button-group">
               <button
                 type="button"
                 onClick={() => {
@@ -548,7 +548,7 @@ export default function NewDeal() {
               {/* Basic Project Information */}
               <div className="mb-6">
                 <h3 className="text-md font-medium text-slate-800 mb-3">Project Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mobile-form-grid">
                   <Input label="Project Name" name="project_name" value={form.project_name} onChange={handleChange} required />
                   <Input label="Survey Number" name="survey_number" value={form.survey_number} onChange={handleChange} required />
                   
@@ -640,7 +640,7 @@ export default function NewDeal() {
               {/* Land Documents Section */}
               <div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Land Documents</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mobile-form-grid">
                   
                   {/* 7/12 Extract */}
                   <div className="h-fit">
@@ -774,7 +774,7 @@ export default function NewDeal() {
                       
                       {ownerSelectionTypes[idx] === 'existing' ? (
                         // Read-only view for existing owners
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mobile-form-grid">
                           <div className="relative">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Owner Name</label>
                             <div className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-slate-700 text-sm">
@@ -802,7 +802,7 @@ export default function NewDeal() {
                         </div>
                       ) : (
                         // Editable form for new owners
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mobile-form-grid">
                           <div className="relative">
                             <label className="block text-xs font-medium text-gray-500 mb-1">Owner Name *</label>
                             <input
@@ -983,7 +983,7 @@ export default function NewDeal() {
                       
                       {investorSelectionTypes[investorIdx] === 'existing' ? (
                         // Read-only view for existing investors
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mobile-form-grid">
                           <div className="relative">
                             <label className="block text-xs font-medium text-slate-500 mb-1">Investor Name</label>
                             <div className="p-2 bg-white border border-slate-200 rounded text-sm text-slate-800">
@@ -1011,7 +1011,7 @@ export default function NewDeal() {
                         </div>
                       ) : (
                         // Editable form for new investors
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mobile-form-grid">
                           <div className="relative">
                             <label className="block text-xs font-medium text-gray-500 mb-1">Investor Name *</label>
                             <input
@@ -1089,7 +1089,7 @@ export default function NewDeal() {
 
           {/* Submit Button Section - Consistent with Dashboard */}
           <div className="bg-white border-t border-slate-200 px-4 py-3">
-            <div className="max-w-md mx-auto flex space-x-3">
+            <div className="max-w-md mx-auto flex space-x-3 mobile-action-buttons">
               <button 
                 type="button"
                 onClick={() => {
@@ -1113,6 +1113,63 @@ export default function NewDeal() {
           </div>
         </form>
       </div>
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          .mobile-header-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-button-group {
+            flex-direction: column;
+            width: 100%;
+            gap: 0.5rem;
+          }
+          
+          .mobile-button-group > * {
+            width: 100%;
+            justify-content: center;
+          }
+          
+          .mobile-form-grid {
+            grid-template-columns: 1fr !important;
+            gap: 1rem;
+          }
+          
+          .mobile-action-buttons {
+            flex-direction: column;
+            gap: 0.75rem;
+            max-width: none;
+          }
+          
+          .mobile-action-buttons > * {
+            width: 100%;
+            justify-content: center;
+          }
+          
+          /* Make form sections more mobile-friendly */
+          section {
+            padding: 1rem !important;
+          }
+          
+          /* Improve input touch targets */
+          input, select, textarea {
+            min-height: 44px;
+            font-size: 16px;
+          }
+          
+          /* Make document upload areas more touch-friendly */
+          .cursor-pointer {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -34,7 +34,7 @@ export default function Dashboard() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedDeal, setSelectedDeal] = useState(null)
 
-  const fetchDeals = useCallback(async (page = 1, isInitialLoad = false) => {
+    const fetchDeals = useCallback(async (page = 1, isInitialLoad = false, customSearch = null) => {
     console.log('fetchDeals called with page:', page, 'isInitialLoad:', isInitialLoad)
     try {
       // Only show full loading on initial load, use tableLoading for pagination
@@ -57,8 +57,11 @@ export default function Dashboard() {
       if (statusFilter && statusFilter !== 'all') {
         params.append('status', statusFilter)
       }
-      if (searchTerm.trim()) {
-        params.append('search', searchTerm.trim())
+      
+      // Use custom search term if provided, otherwise get current searchTerm value
+      const currentSearchTerm = customSearch !== null ? customSearch : document.querySelector('input[placeholder="Search deals..."]')?.value || ''
+      if (currentSearchTerm && currentSearchTerm.trim()) {
+        params.append('search', currentSearchTerm.trim())
       }
       
       console.log('Fetching with params:', params.toString())
@@ -105,8 +108,17 @@ export default function Dashboard() {
       setLoading(false)
       setTableLoading(false)
     }
-  }, [router, itemsPerPage, filterYear, statusFilter, searchTerm])
+  }, [router, itemsPerPage, filterYear, statusFilter])
 
+  // Handle page changes separately - pass search term if it exists
+  const handlePageChange = useCallback((newPage) => {
+    if (newPage === currentPage || tableLoading) return
+    console.log('Changing to page:', newPage)
+    setCurrentPage(newPage)
+    fetchDeals(newPage, false, searchTerm)
+  }, [currentPage, tableLoading, fetchDeals, searchTerm])
+
+  // Initial load useEffect
   useEffect(() => {
     // Add a small delay to ensure page is fully mounted before checking auth
     const timer = setTimeout(() => {
@@ -116,49 +128,77 @@ export default function Dashboard() {
       }
 
       setUser(getUser())
-      fetchDeals(1, true) // Pass page 1 and isInitialLoad flag
     }, 100)
 
     return () => clearTimeout(timer)
-  }, [router, fetchDeals])
+  }, [router])
 
-  // Handle page changes - fetch data when currentPage changes
-  useEffect(() => {
-    if (user && currentPage !== 1) {
-      // For pages other than 1, fetch data when page changes
-      fetchDeals(currentPage, false)
-    }
-  }, [currentPage, user, fetchDeals])
-
-  // Reset to page 1 when filters change and fetch filtered data
+  // Load data when user is set
   useEffect(() => {
     if (user) {
-      console.log('Filter changed - Year:', filterYear, 'Status:', statusFilter)
-      if (currentPage === 1) {
-        // If already on page 1, fetch data with new filters
-        fetchDeals(1, false)
-      } else {
-        // If not on page 1, setting page to 1 will trigger the above useEffect
-        setCurrentPage(1)
-      }
+      fetchDeals(1, true) // Always start from page 1 with fresh data
     }
-  }, [filterYear, statusFilter, user, currentPage, fetchDeals])
+  }, [user, fetchDeals])
 
-  // Separate useEffect for search to avoid conflicts with filters
+  // Watch for filter changes (only when no search is active)
   useEffect(() => {
-    if (user) {
-      const timeoutId = setTimeout(() => {
+    if (user && !searchTerm) {
+      setCurrentPage(1)
+      fetchDeals(1, false, '')
+    }
+  }, [filterYear, statusFilter, user, searchTerm, fetchDeals])
+
+  // Watch for search changes with debounce - independent of fetchDeals
+  useEffect(() => {
+    if (user && searchTerm !== undefined) {
+      const timeoutId = setTimeout(async () => {
         console.log('Search triggered for:', searchTerm)
-        if (currentPage === 1) {
-          fetchDeals(1, false)
-        } else {
-          setCurrentPage(1) // This will trigger the main fetchDeals via the currentPage useEffect
+        setTableLoading(true)
+        setCurrentPage(1)
+        
+        try {
+          const params = new URLSearchParams({
+            page: '1',
+            limit: itemsPerPage.toString()
+          })
+          
+          if (filterYear) {
+            params.append('year', filterYear)
+          }
+          if (statusFilter && statusFilter !== 'all') {
+            params.append('status', statusFilter)
+          }
+          if (searchTerm.trim()) {
+            params.append('search', searchTerm.trim())
+          }
+          
+          console.log('Searching with params:', params.toString())
+          const response = await dealAPI.getPaginated(params.toString())
+          
+          if (response.data) {
+            const { deals: paginatedDeals, pagination } = response.data
+            setDeals(paginatedDeals || [])
+            setTotalPages(pagination?.totalPages || 1)
+            setTotalCount(pagination?.totalCount || 0)
+            setCurrentPage(pagination?.currentPage || 1)
+          }
+        } catch (error) {
+          console.error('Search error:', error)
+          if (error?.response?.status === 401) {
+            toast.error('Session expired. Please login again.')
+            logout()
+            router.push('/login')
+          } else {
+            toast.error('Search failed')
+          }
+        } finally {
+          setTableLoading(false)
         }
       }, 300)
 
       return () => clearTimeout(timeoutId)
     }
-  }, [searchTerm, user, currentPage, fetchDeals])
+  }, [searchTerm, user, filterYear, statusFilter, itemsPerPage, router])
 
   const handleLogout = () => {
     logout()
@@ -246,17 +286,17 @@ export default function Dashboard() {
       {/* Page Header - Full Width */}
       <div className="w-full">
         <div className="px-6 py-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mobile-header-stack">
             <div className="flex items-center">
               <div>
-                <h1 className="text-3xl font-bold text-slate-900">
+                <h1 className="text-3xl md:text-3xl text-2xl font-bold text-slate-900">
                   Property Management Dashboard
                 </h1>
               </div>
             </div>
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 mobile-filter-stack">
               {/* Search Bar */}
-              <div className="flex-1 max-w-md">
+              <div className="flex-1 max-w-md mobile-search-input">
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -265,28 +305,28 @@ export default function Dashboard() {
                   </div>
                   <input
                     type="text"
-                    placeholder="Search by project name, survey no., location, deal ID, status, or date..."
+                    placeholder="Search deals..."
                     value={searchTerm}
                     onChange={(e) => {
+                      e.preventDefault() // Prevent any form submission
                       const newSearchTerm = e.target.value;
                       setSearchTerm(newSearchTerm);
-                      
-                      // Reset to page 1 when searching
-                      if (currentPage !== 1) {
-                        setCurrentPage(1);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault() // Prevent form submission on Enter
                       }
                     }}
                     className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
                   />
                   {searchTerm && (
                     <button
-                      onClick={() => {
-                        setSearchTerm('');
-                        if (currentPage !== 1) {
-                          setCurrentPage(1);
-                        }
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setSearchTerm('')
                       }}
                       className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      type="button"
                     >
                       <svg className="h-4 w-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -297,8 +337,8 @@ export default function Dashboard() {
               </div>
               
               {/* Filter Section */}
-              <div className="flex items-center space-x-2 bg-slate-50 px-4 py-2 rounded border border-slate-200">
-                <span className="text-sm font-medium text-slate-700">Filter:</span>
+              <div className="flex items-center space-x-2 bg-slate-50 px-4 py-2 rounded border border-slate-200 mobile-filter-row">
+                <span className="text-sm font-medium text-slate-700 mobile-hide-text">Filter:</span>
                 <select
                   value={filterYear}
                   onChange={(e) => {
@@ -338,20 +378,14 @@ export default function Dashboard() {
                     Clear All
                   </button>
                 )}
-              </div>              {(user?.role === 'admin' || user?.role === 'auditor') && (
+              </div>              <div className="flex items-center space-x-3 mobile-button-group">{(user?.role === 'admin' || user?.role === 'auditor') && (
                 <Link href="/deals/new">
                   <span className="flex items-center rounded bg-slate-900 px-6 py-3 text-sm font-medium text-white hover:bg-slate-800 cursor-pointer">
                     + Create New Deal
                   </span>
                 </Link>
               )}
-              {(hasPermission(user, PERMISSIONS.ADMIN_ACCESS) || hasPermission(user, PERMISSIONS.SYSTEM_ADMIN)) && (
-                <Link href="/deals/all">
-                  <span className="flex items-center rounded bg-white px-6 py-3 text-sm font-medium text-slate-900 border border-slate-300 hover:bg-slate-50 cursor-pointer">
-                    View All Deals
-                  </span>
-                </Link>
-              )}
+              </div>
             </div>
           </div>
         </div>
@@ -444,8 +478,8 @@ export default function Dashboard() {
                     )}
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
+                  <div className="overflow-x-auto mobile-table-scroll">
+                    <table className="w-full mobile-table">
                       <thead className="bg-slate-50 border-b border-slate-200">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Project Name</th>
@@ -576,15 +610,10 @@ export default function Dashboard() {
                 {totalPages > 1 && (
                   <div className="bg-white rounded-lg shadow-sm border border-slate-200 px-6 py-4 mt-4">
                     {/* Pagination Buttons - Centered */}
-                    <div className="flex items-center justify-center space-x-2">
+                    <div className="flex items-center justify-center space-x-2 mobile-pagination">
                       {/* Previous Button */}
                       <button
-                        onClick={() => {
-                          if (tableLoading || currentPage === 1) return
-                          const newPage = currentPage - 1
-                          console.log('Going to previous page:', newPage)
-                          setCurrentPage(newPage)
-                        }}
+                        onClick={() => handlePageChange(currentPage - 1)}
                         disabled={currentPage === 1 || tableLoading}
                         className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                       >
@@ -592,15 +621,11 @@ export default function Dashboard() {
                       </button>
 
                       {/* Page Numbers */}
-                      <div className="flex items-center space-x-1">
+                      <div className="flex items-center space-x-1 mobile-pagination-buttons mobile-page-nav">
                         {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                           <button
                             key={pageNum}
-                            onClick={() => {
-                              if (tableLoading || pageNum === currentPage) return
-                              console.log('Going to page:', pageNum)
-                              setCurrentPage(pageNum)
-                            }}
+                            onClick={() => handlePageChange(pageNum)}
                             disabled={tableLoading}
                             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 min-w-[40px] disabled:opacity-50 disabled:cursor-not-allowed ${
                               currentPage === pageNum
@@ -615,12 +640,7 @@ export default function Dashboard() {
 
                       {/* Next Button */}
                       <button
-                        onClick={() => {
-                          if (tableLoading || currentPage === totalPages) return
-                          const newPage = currentPage + 1
-                          console.log('Going to next page:', newPage)
-                          setCurrentPage(newPage)
-                        }}
+                        onClick={() => handlePageChange(currentPage + 1)}
                         disabled={currentPage === totalPages || tableLoading}
                         className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                       >
@@ -649,6 +669,73 @@ export default function Dashboard() {
         onConfirm={handleDeleteDeal}
         dealData={selectedDeal}
       />
+
+      {/* Mobile Responsive CSS */}
+      <style jsx>{`
+        @media (max-width: 767px) {
+          .mobile-header-stack {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+          }
+          
+          .mobile-filter-stack {
+            flex-direction: column;
+            gap: 0.75rem;
+            align-items: stretch;
+          }
+          
+          .mobile-filter-row {
+            flex-direction: column;
+            gap: 0.5rem;
+          }
+          
+          .mobile-button-group {
+            flex-direction: column;
+            gap: 0.5rem;
+            width: 100%;
+          }
+          
+          .mobile-button-group > * {
+            width: 100%;
+            justify-content: center;
+          }
+          
+          .mobile-table-scroll {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          
+          .mobile-table {
+            min-width: 700px;
+          }
+          
+          .mobile-pagination {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+          }
+          
+          .mobile-pagination-buttons {
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+          }
+          
+          .mobile-page-nav {
+            padding: 0.5rem;
+            gap: 0.25rem;
+          }
+          
+          .mobile-search-input {
+            width: 100%;
+          }
+          
+          .mobile-hide-text {
+            display: none;
+          }
+        }
+      `}</style>
     </div>
   )
 }
