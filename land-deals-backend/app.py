@@ -5896,31 +5896,55 @@ def admin_delete_user(current_user, user_id):
 def upload_land_document(current_user, deal_id):
     """Upload land document with structured folder organization"""
     try:
+        print(f"=== Starting land document upload for deal {deal_id} ===")
+        print(f"Current user: {current_user}")
+        print(f"Request files: {list(request.files.keys())}")
+        print(f"Request form: {dict(request.form)}")
+        
         if 'file' not in request.files:
+            print("ERROR: No file in request.files")
             return jsonify({'error': 'No file provided'}), 400
         
         file = request.files['file']
         document_type = request.form.get('document_type')
         
+        print(f"File: {file}")
+        print(f"Filename: {file.filename}")
+        print(f"Document type: {document_type}")
+        
         if not document_type:
+            print("ERROR: No document type provided")
             return jsonify({'error': 'Document type is required'}), 400
         
         if file.filename == '':
+            print("ERROR: Empty filename")
             return jsonify({'error': 'No file selected'}), 400
         
         # Verify deal exists
+        print("=== Checking if deal exists ===")
         connection = get_db_connection()
         if not connection:
+            print("ERROR: Database connection failed")
             return jsonify({'error': 'Database connection failed'}), 500
             
         cursor = connection.cursor(dictionary=True)
         cursor.execute("SELECT id FROM deals WHERE id = %s", (deal_id,))
-        if not cursor.fetchone():
+        deal_result = cursor.fetchone()
+        print(f"Deal query result: {deal_result}")
+        
+        if not deal_result:
             connection.close()
+            print("ERROR: Deal not found")
             return jsonify({'error': 'Deal not found'}), 404
         
         # Use document manager
+        print("=== Using document manager ===")
+        print(f"Upload folder config: {app.config.get('UPLOAD_FOLDER', 'NOT SET')}")
+        
         doc_manager = get_document_manager(app.config['UPLOAD_FOLDER'])
+        print(f"Document manager created: {doc_manager}")
+        
+        print("=== Saving document ===")
         result = doc_manager.save_document(
             file=file,
             category='land',
@@ -5929,12 +5953,20 @@ def upload_land_document(current_user, deal_id):
             uploaded_by=current_user
         )
         
+        print(f"Document manager result: {result}")
+        
         if 'error' in result:
             connection.close()
+            print(f"ERROR from document manager: {result['error']}")
             return jsonify({'error': result['error']}), 400
         
         # Save to database with structured path
+        print("=== Saving to database ===")
         try:
+            # Extract user ID from current_user dict
+            user_id = current_user.get('id') if isinstance(current_user, dict) else current_user
+            print(f"Using user_id: {user_id}")
+            
             cursor.execute("""
                 INSERT INTO documents (deal_id, document_type, document_name, file_path, file_size, uploaded_by)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -5944,14 +5976,17 @@ def upload_land_document(current_user, deal_id):
                 result['filename'],
                 result['web_path'],
                 result['file_size'],
-                current_user
+                user_id
             ))
             connection.commit()
+            print("=== Database insert successful ===")
         except Exception as db_error:
+            print(f"=== Database error: {str(db_error)} ===")
             connection.rollback()
             connection.close()
             return jsonify({'error': f'Database error: {str(db_error)}'}), 500
         
+        print("=== Upload completed successfully ===")
         return jsonify({
             'message': 'Land document uploaded successfully',
             'filename': result['filename'],
@@ -5960,7 +5995,7 @@ def upload_land_document(current_user, deal_id):
         })
         
     except Exception as e:
-        print(f"Error uploading land document: {str(e)}")
+        print(f"=== MAJOR ERROR uploading land document: {str(e)} ===")
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500

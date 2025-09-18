@@ -13,7 +13,6 @@ import {
   Title
 } from 'chart.js';
 import { Pie } from 'react-chartjs-2';
-import jsPDF from 'jspdf';
 
 // Register Chart.js components
 ChartJS.register(ArcElement, Tooltip, Legend, Title);
@@ -307,12 +306,21 @@ export default function ViewDeal() {
     try {
       setSellingAmountLoading(true);
       
+      console.log('updateSellingAmount called with:', { askingPrice, soldPrice });
+      
       const sellingData = {};
       if (soldPrice !== undefined) sellingData.sold_price = soldPrice;
       
+      console.log('Sending sellingData to API:', sellingData);
+      
       await dealAPI.updateSellingAmount(id, sellingData);
       
-      if (soldPrice !== undefined) setSoldPrice(soldPrice);
+      console.log('API call successful, updating state...');
+      
+      if (soldPrice !== undefined) {
+        console.log('Setting soldPrice to:', soldPrice);
+        setSoldPrice(soldPrice);
+      }
       
       setDeal(prevDeal => ({
         ...prevDeal,
@@ -2126,171 +2134,6 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
   const [currentView, setCurrentView] = useState('table');
 
   // Print function for payments table
-  // Enhanced professional PDF download function
-  const handleDownloadPDF = async () => {
-    try {
-      // Get filtered and sorted payments (same as print function)
-      const sortedPayments = getFilteredAndSortedPayments;
-      
-      // Calculate total amount and status breakdown
-      const totalAmount = sortedPayments.reduce((sum, payment) => {
-        return sum + (parseFloat(payment.amount) || 0);
-      }, 0);
-      
-      // Calculate status breakdown
-      const statusBreakdown = sortedPayments.reduce((acc, payment) => {
-        const amount = parseFloat(payment.amount) || 0;
-        const status = payment.status || 'pending';
-        
-        if (!acc[status]) {
-          acc[status] = { count: 0, amount: 0 };
-        }
-        acc[status].count += 1;
-        acc[status].amount += amount;
-        
-        return acc;
-      }, {});
-      
-      const doc = new jsPDF('l', 'mm', 'a4'); // Landscape orientation for better table layout
-      
-      // Set up the PDF header
-      doc.setFontSize(20);
-      doc.setTextColor(51, 51, 51);
-      doc.text('Payments Report', 20, 20);
-      
-      // Add deal information
-      doc.setFontSize(12);
-      doc.setTextColor(102, 102, 102);
-      const reportDate = new Date().toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      doc.text(`Generated on: ${reportDate}`, 220, 20);
-      
-      // Deal details
-      const dealInfo = [
-        `Deal Name: ${deal?.project_name || 'N/A'}`,
-        `Survey No: ${deal?.survey_number || 'N/A'}`,
-        `Total Payments: ${sortedPayments.length}`,
-        `Total Amount: ${formatAmount(totalAmount)}`
-      ];
-      
-      let yPos = 35;
-      dealInfo.forEach((info, index) => {
-        doc.text(info, 20 + (index % 2) * 140, yPos + Math.floor(index / 2) * 7);
-      });
-      
-      yPos += 20;
-      
-      // Add status breakdown
-      doc.setFontSize(11);
-      doc.setTextColor(68, 68, 68);
-      const statusInfo = [
-        `Completed: ${statusBreakdown.completed?.count || 0} (${formatAmount(statusBreakdown.completed?.amount || 0)})`,
-        `Pending: ${statusBreakdown.pending?.count || 0} (${formatAmount(statusBreakdown.pending?.amount || 0)})`,
-        `Cancelled: ${statusBreakdown.cancelled?.count || 0} (${formatAmount(statusBreakdown.cancelled?.amount || 0)})`,
-        `Overdue: ${statusBreakdown.overdue?.count || 0} (${formatAmount(statusBreakdown.overdue?.amount || 0)})`
-      ];
-      
-      statusInfo.forEach((info, index) => {
-        doc.text(info, 20 + (index % 2) * 140, yPos + Math.floor(index / 2) * 7);
-      });
-      
-      yPos += 25;
-      
-      // Table headers
-      const headers = ['Receiver', 'Payer', 'Mode', 'Transaction ID', 'Type', 'Status', 'Date', 'Amount'];
-      const colWidths = [35, 35, 25, 30, 25, 20, 25, 25];
-      let xPos = 20;
-      
-      // Draw header background
-      doc.setFillColor(248, 249, 250);
-      doc.rect(20, yPos - 5, 260, 10, 'F');
-      
-      // Draw header text
-      doc.setFontSize(10);
-      doc.setTextColor(68, 68, 68);
-      doc.setFont(undefined, 'bold');
-      
-      headers.forEach((header, index) => {
-        doc.text(header, xPos + 2, yPos);
-        xPos += colWidths[index];
-      });
-      
-      yPos += 10;
-      
-      // Table content
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(9);
-      
-      sortedPayments.forEach((payment, index) => {
-        // Alternate row colors
-        if (index % 2 === 0) {
-          doc.setFillColor(249, 249, 249);
-          doc.rect(20, yPos - 4, 260, 8, 'F');
-        }
-        
-        xPos = 20;
-        doc.setTextColor(51, 51, 51);
-        
-        const rowData = [
-          getPaymentDisplayName(payment, 'paid_to'),
-          getPaymentDisplayName(payment, 'paid_by'),
-          payment.payment_mode || payment.payment_method || 'N/A',
-          payment.reference || payment.transaction_id || 'N/A',
-          getPaymentTypeDisplayName(payment.payment_type),
-          payment.status || 'N/A',
-          formatDate(payment.payment_date),
-          formatAmount(payment.amount)
-        ];
-        
-        rowData.forEach((data, colIndex) => {
-          // Truncate long text to fit in columns
-          const maxWidth = colWidths[colIndex] - 4;
-          let text = data.toString();
-          if (doc.getTextWidth(text) > maxWidth) {
-            while (doc.getTextWidth(text + '...') > maxWidth && text.length > 0) {
-              text = text.slice(0, -1);
-            }
-            text += '...';
-          }
-          
-          doc.text(text, xPos + 2, yPos);
-          xPos += colWidths[colIndex];
-        });
-        
-        yPos += 8;
-        
-        // Add new page if needed
-        if (yPos > 180) {
-          doc.addPage();
-          yPos = 20;
-        }
-      });
-      
-      // Add total row
-      yPos += 5;
-      doc.setFillColor(227, 242, 253);
-      doc.rect(20, yPos - 4, 260, 8, 'F');
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(37, 99, 235);
-      doc.text('Total Amount:', 180, yPos);
-      doc.text(formatAmount(totalAmount), 225, yPos);
-      
-      // Save the PDF
-      const fileName = `payments_report_${deal?.project_name || 'unknown'}_${new Date().toISOString().split('T')[0]}.pdf`;
-      doc.save(fileName);
-      
-      toast.success('PDF downloaded successfully!');
-      
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      toast.error('Failed to generate PDF. Please try again.');
-    }
-  };
 
   const handlePrintPayments = () => {
     const printWindow = window.open('', '_blank');
@@ -3235,16 +3078,7 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
                 Print
               </button>
               
-              <button
-                onClick={handleDownloadPDF}
-                className="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
-                title="Download Professional PDF Report"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                PDF
-              </button>
+
               
               <button
                 onClick={() => setCurrentView('table')}
@@ -3700,6 +3534,8 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
   const [isEditingSoldPrice, setIsEditingSoldPrice] = useState(false);
   const [localSoldPrice, setLocalSoldPrice] = useState(soldPrice);
   const [showAddBuyer, setShowAddBuyer] = useState(false);
+
+  console.log('SellingSection rendered with soldPrice:', soldPrice);
   const [buyerForm, setBuyerForm] = useState({
     name: '',
     mobile: '',
@@ -3710,6 +3546,7 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
   const [buyers, setBuyers] = useState(deal?.buyers || []);
 
   useEffect(() => {
+    console.log('SellingSection useEffect: soldPrice changed to:', soldPrice);
     setLocalSoldPrice(soldPrice);
   }, [soldPrice]);
 
@@ -3728,17 +3565,28 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
       return;
     }
 
+    console.log('handleSaveSoldPrice called with localSoldPrice:', localSoldPrice);
+    console.log('Calling onSellingAmountChange with:', undefined, localSoldPrice || null);
+
     try {
       await onSellingAmountChange(undefined, localSoldPrice || null);
       setIsEditingSoldPrice(false);
       
+      console.log('onSellingAmountChange completed successfully');
+      
       // Don't call onUpdate() - the parent updateSellingAmount function already
       // updates both setSoldPrice() and deal state correctly. Calling onUpdate()
       // creates a race condition with server data fetch.
-    } catch {
+      // Parent function handles success/error toast messages
+      
+      // Reload the page to ensure UI shows updated data
+      window.location.reload();
+      
+    } catch (error) {
+      console.error('Failed to save selling amount:', error);
       // Reset local state on error
       setLocalSoldPrice(soldPrice);
-      // Error handling is done in the parent component
+      // Parent function handles error toast messages
     }
   };
 
@@ -3845,7 +3693,10 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
                 <div>
                   <div className="text-sm font-medium text-gray-700 mb-1">Sold Price</div>
                   <div className="text-lg font-semibold text-black">
-                    {soldPrice ? formatAmount(Number(soldPrice)) : 'Not set'}
+                    {(() => {
+                      console.log('Display: soldPrice =', soldPrice, ', showing:', soldPrice ? formatAmount(Number(soldPrice)) : 'Not set');
+                      return soldPrice ? formatAmount(Number(soldPrice)) : 'Not set';
+                    })()}
                   </div>
                 </div>
                 <button
