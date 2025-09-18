@@ -20,7 +20,7 @@
 
 4. **Import your database backup:**
    ```bash
-   mysql -u land_deals_user -pSecurePassword123! land_deals_db < land_deals_backup.sql
+   mysql -u land_deals_user -pmajorProject@1v land_deals_db < land_deals_backup.sql
    ```
 
 ## Manual Step-by-Step Deployment
@@ -34,7 +34,7 @@ sudo apt install -y mysql-server
 # Create database and user
 sudo mysql -e "
 CREATE DATABASE land_deals_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'land_deals_user'@'localhost' IDENTIFIED BY 'SecurePassword123!';
+CREATE USER 'land_deals_user'@'localhost' IDENTIFIED BY 'majorProject@1v';
 GRANT ALL PRIVILEGES ON land_deals_db.* TO 'land_deals_user'@'localhost';
 FLUSH PRIVILEGES;
 "
@@ -65,7 +65,7 @@ npm run build
 
 ### 5. Import Database
 ```bash
-mysql -u land_deals_user -pSecurePassword123! land_deals_db < your_backup.sql
+mysql -u land_deals_user -pmajorProject@1v land_deals_db < your_backup.sql
 ```
 
 ## Database Configuration
@@ -75,7 +75,7 @@ Your application is now configured to use these local database settings:
 - **Host:** localhost
 - **Database:** land_deals_db  
 - **User:** land_deals_user
-- **Password:** SecurePassword123!
+- **Password:** majorProject@1v
 - **Port:** 3306
 
 ## Environment Files Created
@@ -93,7 +93,7 @@ After deployment, test your application:
 curl http://localhost:5000/api/health
 
 # Test database connection
-mysql -u land_deals_user -pSecurePassword123! land_deals_db -e "SELECT COUNT(*) FROM deals;"
+mysql -u land_deals_user -pmajorProject@1v land_deals_db -e "SELECT COUNT(*) FROM deals;"
 
 # Check service status
 systemctl status land-deals-backend
@@ -108,7 +108,7 @@ systemctl status land-deals-frontend
 
 ## Security Notes
 
-1. **Change the default password:** Update `SecurePassword123!` to a stronger password
+1. **Change the default password:** Update `majorProject@1v` to a stronger password if needed
 2. **Setup SSL:** Use Let's Encrypt for HTTPS
 3. **Configure firewall:** Only allow necessary ports
 4. **Regular backups:** Schedule automatic database backups
@@ -131,5 +131,5 @@ systemctl restart nginx
 
 ### Test database connection:
 ```bash
-mysql -u land_deals_user -pSecurePassword123! land_deals_db -e "SHOW TABLES;"
+mysql -u land_deals_user -pmajorProject@1v land_deals_db -e "SHOW TABLES;"
 ```

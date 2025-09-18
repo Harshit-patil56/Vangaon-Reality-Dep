@@ -1,53 +1,32 @@
 #!/bin/bash
 
-# Complete Deployment Script for DigitalOcean Droplet
-# This script will deploy your Land Deals application with local MySQL database
+# Quick Deployment Script for Existing Database
+# Use this when your MySQL database is already set up with data
 
-set -e  # Exit on any error
+echo "🚀 Quick deployment for existing database setup..."
 
-echo "🚀 Starting Land Deals Application Deployment..."
-
-# Variables
 PROJECT_DIR="/var/www/Vangaon-Reality-Dep"
 REPO_URL="https://github.com/Harshit-patil56/Vangaon-Reality-Dep.git"
 
 # Update system
-echo "📦 Updating system packages..."
+echo "📦 Updating system..."
 sudo apt update && sudo apt upgrade -y
 
 # Install essential packages
-echo "📋 Installing essential packages..."
-sudo apt install -y curl wget git nginx certbot python3-certbot-nginx build-essential
+echo "📋 Installing required packages..."
+sudo apt install -y curl wget git nginx python3 python3-pip python3-venv nodejs npm
 
-# Install Node.js 18
-echo "📦 Installing Node.js..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# Install Python and pip
-echo "🐍 Installing Python dependencies..."
-sudo apt install -y python3 python3-pip python3-venv default-libmysqlclient-dev
-
-# Setup MySQL Database
-echo "🗄️  Setting up MySQL database..."
-sudo apt install -y mysql-server
-sudo systemctl start mysql
-sudo systemctl enable mysql
-
-# Create database and user
-echo "🔐 Creating database and user..."
-sudo mysql -e "
-CREATE DATABASE IF NOT EXISTS land_deals_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'land_deals_user'@'localhost' IDENTIFIED BY 'majorProject@1v';
-GRANT ALL PRIVILEGES ON land_deals_db.* TO 'land_deals_user'@'localhost';
-FLUSH PRIVILEGES;
-"
-
-# Clone repository
-echo "📥 Cloning repository..."
-sudo rm -rf $PROJECT_DIR
-sudo git clone $REPO_URL $PROJECT_DIR
-cd $PROJECT_DIR
+# Clone/update repository
+echo "📥 Setting up application code..."
+if [ -d "$PROJECT_DIR" ]; then
+    echo "Directory exists, pulling latest changes..."
+    cd $PROJECT_DIR
+    sudo git pull origin master
+else
+    echo "Cloning repository..."
+    sudo git clone $REPO_URL $PROJECT_DIR
+    cd $PROJECT_DIR
+fi
 
 # Set permissions
 sudo chown -R www-data:www-data $PROJECT_DIR
@@ -64,22 +43,59 @@ source venv/bin/activate
 pip install -r requirements.txt
 pip install python-dotenv mysql-connector-python
 
-# Copy environment file
+# Copy environment file (with your password majorProject@1v)
 cp .env.production .env
+
+# Test database connection
+echo "🧪 Testing database connection..."
+python3 -c "
+import mysql.connector
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+try:
+    config = {
+        'host': 'localhost',
+        'user': 'land_deals_user', 
+        'password': 'majorProject@1v',
+        'database': 'land_deals_db',
+        'port': 3306
+    }
+    
+    conn = mysql.connector.connect(**config)
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM deals')
+    result = cursor.fetchone()
+    print(f'✅ Database connection successful! Found {result[0]} deals.')
+    cursor.execute('SHOW TABLES')
+    tables = cursor.fetchall()
+    print(f'📋 Tables: {[t[0] for t in tables]}')
+    conn.close()
+except Exception as e:
+    print(f'❌ Database connection failed: {e}')
+    exit(1)
+"
+
+if [ $? -eq 0 ]; then
+    echo "✅ Database connection verified!"
+else
+    echo "❌ Database connection failed! Please check your database setup."
+    exit 1
+fi
 
 # Setup Frontend
 echo "🎨 Setting up frontend..."
 cd $PROJECT_DIR/land-deals-frontend/my-app
 
-# Install dependencies
+# Install dependencies and build
 sudo -u www-data npm install
+sudo -u www-data npm run build
 
 # Create production environment
 echo "NEXT_PUBLIC_API_URL=http://localhost:5000" > .env.production
 echo "NEXT_PUBLIC_APP_ENV=production" >> .env.production
-
-# Build frontend
-sudo -u www-data npm run build
 
 # Create uploads directory
 sudo mkdir -p $PROJECT_DIR/uploads
@@ -107,7 +123,7 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# Frontend service
+# Frontend service  
 sudo tee /etc/systemd/system/land-deals-frontend.service > /dev/null <<EOF
 [Unit]
 Description=Land Deals Frontend
@@ -171,18 +187,16 @@ EOF
 sudo ln -sf /etc/nginx/sites-available/land-deals /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 
-# Test nginx configuration
+# Test nginx
 sudo nginx -t
 
 # Enable and start services
 echo "🚀 Starting services..."
 sudo systemctl daemon-reload
-sudo systemctl enable land-deals-backend
-sudo systemctl enable land-deals-frontend
-sudo systemctl enable nginx
+sudo systemctl enable land-deals-backend land-deals-frontend nginx
 
 sudo systemctl start land-deals-backend
-sudo systemctl start land-deals-frontend
+sudo systemctl start land-deals-frontend  
 sudo systemctl restart nginx
 
 # Setup firewall
@@ -195,18 +209,13 @@ echo "✅ Deployment completed successfully!"
 echo ""
 echo "🎉 Your Land Deals application is now running!"
 echo ""
-echo "📋 Service Status:"
-sudo systemctl status land-deals-backend --no-pager -l
-sudo systemctl status land-deals-frontend --no-pager -l
-sudo systemctl status nginx --no-pager -l
-echo ""
 echo "🌐 Access your application at: http://$(curl -s ifconfig.me)"
 echo "📊 Backend API: http://$(curl -s ifconfig.me)/api"
 echo ""
-echo "📝 Next steps:"
-echo "1. Import your database backup if you have one"
-echo "2. Configure your domain name (optional)"
-echo "3. Setup SSL certificate with Let's Encrypt (optional)"
+echo "📋 Service Status:"
+sudo systemctl status land-deals-backend --no-pager -l
+echo ""
+sudo systemctl status land-deals-frontend --no-pager -l
 echo ""
 echo "🗄️  Database Info:"
 echo "- Host: localhost"

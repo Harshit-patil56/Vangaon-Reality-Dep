@@ -22,7 +22,7 @@ echo "🔐 Setting up database and user..."
 # Create database and user
 sudo mysql -e "
 CREATE DATABASE IF NOT EXISTS land_deals_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'land_deals_user'@'localhost' IDENTIFIED BY 'SecurePassword123!';
+CREATE USER IF NOT EXISTS 'land_deals_user'@'localhost' IDENTIFIED BY 'majorProject@1v';
 GRANT ALL PRIVILEGES ON land_deals_db.* TO 'land_deals_user'@'localhost';
 FLUSH PRIVILEGES;
 "
@@ -31,7 +31,7 @@ echo "✅ Database setup completed!"
 
 # Test connection
 echo "🧪 Testing database connection..."
-mysql -u land_deals_user -pSecurePassword123! land_deals_db -e "SELECT 'Database connection successful!' as status;"
+mysql -u land_deals_user -pmajorProject@1v land_deals_db -e "SELECT 'Database connection successful!' as status;"
 
 if [ $? -eq 0 ]; then
     echo "✅ Database connection test passed!"
@@ -43,7 +43,7 @@ fi
 echo "📋 Database setup summary:"
 echo "- Database: land_deals_db"
 echo "- User: land_deals_user"
-echo "- Password: SecurePassword123!"
+echo "- Password: majorProject@1v"
 echo "- Host: localhost"
 echo "- Port: 3306"
 
