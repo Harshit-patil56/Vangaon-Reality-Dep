@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { dealAPI, paymentsAPI } from '../../lib/api';
 import { getUser, getToken } from '../../lib/auth';
-import { hasPermission, PERMISSIONS } from '../../lib/permissions';
+import { hasPermission, PERMISSIONS, hasRestrictedAccess, canAccessDeal } from '../../lib/permissions';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/layout/Navbar';
 import {
@@ -101,6 +101,16 @@ export default function ViewDeal() {
         mergedDeal.documents = data.documents || mergedDeal.documents || [];
         mergedDeal.owners = data.owners || mergedDeal.owners || [];
         mergedDeal.investors = data.investors || mergedDeal.investors || [];
+      }
+
+      // Check access permissions for restricted users
+      const currentUser = getUser();
+      if (hasRestrictedAccess(currentUser)) {
+        if (!canAccessDeal(currentUser, mergedDeal)) {
+          toast.error('Access denied. You can only view deals where you are assigned as an investor.');
+          router.push('/dashboard');
+          return;
+        }
       }
 
       // Fetch payments immediately to calculate investment amounts
@@ -261,7 +271,7 @@ export default function ViewDeal() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, router]);
 
   const updatePurchaseAmount = useCallback(async (newAmount) => {
     if (!id) return;
@@ -442,16 +452,27 @@ export default function ViewDeal() {
 
   // Initialize section from URL on component mount
   useEffect(() => {
-    if (router.isReady && id) {
+    if (router.isReady && id && user) {
       const urlSection = router.query.section;
-      if (urlSection && ['project', 'land', 'payments', 'selling', 'profitloss'].includes(urlSection)) {
+      const allowedSections = ['project', 'payments', 'profitloss'];
+      
+      // Add restricted sections only if user has permissions
+      if (hasPermission(user, PERMISSIONS.DEALS_EDIT)) {
+        allowedSections.push('land', 'selling');
+      }
+      
+      if (urlSection && allowedSections.includes(urlSection)) {
         setActiveSection(urlSection);
       } else if (!urlSection) {
         // Set default section and update URL
         router.replace(`/deals/${id}?section=project`, undefined, { shallow: true });
+      } else if (urlSection && !allowedSections.includes(urlSection)) {
+        // Redirect to project section if trying to access restricted section
+        router.replace(`/deals/${id}?section=project`, undefined, { shallow: true });
+        toast.error('You do not have permission to access that section');
       }
     }
-  }, [router.isReady, router.query.section, router, id]);
+  }, [router.isReady, router.query.section, router, id, user]);
 
   useEffect(() => {
     const handler = () => {
@@ -526,9 +547,9 @@ export default function ViewDeal() {
   
   const sections = [
     { id: 'project', name: 'PROJECT DETAILS' },
-    { id: 'land', name: 'BUYING' },
+    ...(hasPermission(user, PERMISSIONS.DEALS_EDIT) ? [{ id: 'land', name: 'BUYING' }] : []),
     { id: 'payments', name: 'PAYMENTS' },
-    { id: 'selling', name: 'SELLING' },
+    ...(hasPermission(user, PERMISSIONS.DEALS_EDIT) ? [{ id: 'selling', name: 'SELLING' }] : []),
     { id: 'profitloss', name: 'PROFIT & LOSS' }
   ];
 
@@ -4035,142 +4056,52 @@ function ProfitLossSection({ deal, payments, investors }) {
     return `₹${parseFloat(amount).toLocaleString('en-IN')}`;
   };
 
-  // Use the actual purchase amount from the buying section
+  // Basic data from deal
   const landPurchaseAmount = parseFloat(deal?.purchase_amount || 0);
-
-  // Calculate selling price
   const sellingPrice = deal?.sold_price ? parseFloat(deal.sold_price) : 0;
 
-  // Calculate total invested amount for an investor based on completed payments (using same logic as ProjectDetailsSection)
-  const calculateInvestorAmount = (investor, payments) => {
+  // Calculate completed land purchase payments for an investor
+  const calculateLandPurchasePayments = (investor) => {
     if (!payments || !investor) return { amount: 0, count: 0 };
     
     const investorId = investor.id?.toString();
     const investorName = investor.investor_name || investor.name;
     
-    console.log(`\n=== P&L: Calculating for investor: ${investorName} (ID: ${investorId}) ===`);
-    console.log('Total payments to check:', payments.length);
-    
-    // Use robust matching logic similar to PaymentsSection and other components
-    const investorPayments = payments.filter(payment => {
-      const paymentStatus = payment.status === 'completed' || payment.status === 'success';
-      if (!paymentStatus) {
-        console.log(`Payment ${payment.id} skipped - status: ${payment.status}`);
-        return false;
-      }
-      
-      console.log(`Checking payment ${payment.id}:`, {
-        paid_by_id: payment.paid_by_id,
-        paid_by: payment.paid_by,
-        paid_by_name: payment.paid_by_name,
-        amount: payment.amount,
-        status: payment.status
-      });
-      
-      // Primary ID-based matching (most reliable)
-      if (payment.paid_by_id?.toString() === investorId) {
-        console.log(`✓ Matched on paid_by_id: ${payment.paid_by_id} === ${investorId}`);
-        return true;
-      }
-      
-      // Secondary ID matching (legacy field) - direct comparison
-      if (payment.paid_by?.toString() === investorId) {
-        console.log(`✓ Matched on paid_by: ${payment.paid_by} === ${investorId}`);
-        return true;
-      }
-      
-      // Parse "investor_ID" format from paid_by field
-      if (payment.paid_by && typeof payment.paid_by === 'string' && payment.paid_by.includes('_')) {
-        const [type, id] = payment.paid_by.split('_');
-        if (type === 'investor' && id === investorId) {
-          console.log(`✓ Matched on parsed paid_by: "${payment.paid_by}" -> investor ID ${id} === ${investorId}`);
-          return true;
-        }
-      }
-      
-      // Exact name matching
-      if (payment.paid_by_name === investorName) {
-        console.log(`✓ Matched on exact paid_by_name: "${payment.paid_by_name}" === "${investorName}"`);
-        return true;
-      }
-      
-      // Flexible name matching (case insensitive, trim whitespace)
-      const paymentName = (payment.paid_by_name || '').toLowerCase().trim();
-      const investorNameLower = (investorName || '').toLowerCase().trim();
-      
-      if (paymentName && investorNameLower && paymentName === investorNameLower) {
-        console.log(`✓ Matched on normalized names: "${paymentName}" === "${investorNameLower}"`);
-        return true;
-      }
-      
-      // Partial name matching
-      if (paymentName && investorNameLower && 
-          (paymentName.includes(investorNameLower) || investorNameLower.includes(paymentName))) {
-        console.log(`✓ Matched on partial names: "${paymentName}" includes "${investorNameLower}"`);
-        return true;
-      }
-      
-      console.log(`✗ No match found for payment ${payment.id}`);
-      return false;
-    });
-
-    const totalAmount = investorPayments.reduce((sum, payment) => {
-      const amount = parseFloat(payment.amount) || 0;
-      console.log(`Adding payment ${payment.id}: ₹${amount}`);
-      return sum + amount;
-    }, 0);
-    
-    console.log(`Total for ${investorName}: ₹${totalAmount} from ${investorPayments.length} payments`);
-    return { amount: totalAmount, count: investorPayments.length };
-  };
-
-  // Calculate ONLY land purchase contributions for Profit & Loss analysis
-  const calculateLandPurchaseContribution = (investor, payments) => {
-    if (!payments || !investor) return { amount: 0, count: 0 };
-    
-    const investorId = investor.id?.toString();
-    const investorName = investor.investor_name || investor.name;
-    
-    console.log(`\n=== P&L Land Purchase: Calculating for investor: ${investorName} (ID: ${investorId}) ===`);
+    console.log(`\n=== Debug: Calculating LAND PURCHASE for investor: ${investorName} (ID: ${investorId}) ===`);
     
     // Filter for completed land_purchase payments only
     const landPurchasePayments = payments.filter(payment => {
-      const paymentStatus = payment.status === 'completed' || payment.status === 'success';
+      const isCompleted = payment.status === 'completed';
       const isLandPurchase = payment.payment_type === 'land_purchase';
       
-      if (!paymentStatus || !isLandPurchase) {
+      if (!isCompleted || !isLandPurchase) {
         return false;
       }
       
-      // Use same matching logic as above
+      // Match by investor ID
       if (payment.paid_by_id?.toString() === investorId) {
+        console.log(`✅ Payment ${payment.id} matched by paid_by_id: ${payment.paid_by_id} === ${investorId}`);
         return true;
       }
       
+      // Match by legacy paid_by field (direct ID)
       if (payment.paid_by?.toString() === investorId) {
+        console.log(`✅ Payment ${payment.id} matched by paid_by: ${payment.paid_by} === ${investorId}`);
         return true;
       }
       
+      // Match by legacy paid_by field (investor_ID format)
       if (payment.paid_by && typeof payment.paid_by === 'string' && payment.paid_by.includes('_')) {
         const [type, id] = payment.paid_by.split('_');
         if (type === 'investor' && id === investorId) {
+          console.log(`✅ Payment ${payment.id} matched by parsed paid_by: "${payment.paid_by}" -> investor ID ${id} === ${investorId}`);
           return true;
         }
       }
       
+      // Match by investor name
       if (payment.paid_by_name === investorName) {
-        return true;
-      }
-      
-      const paymentName = (payment.paid_by_name || '').toLowerCase().trim();
-      const investorNameLower = (investorName || '').toLowerCase().trim();
-      
-      if (paymentName && investorNameLower && paymentName === investorNameLower) {
-        return true;
-      }
-      
-      if (paymentName && investorNameLower && 
-          (paymentName.includes(investorNameLower) || investorNameLower.includes(paymentName))) {
+        console.log(`✅ Payment ${payment.id} matched by paid_by_name: ${payment.paid_by_name} === ${investorName}`);
         return true;
       }
       
@@ -4178,62 +4109,53 @@ function ProfitLossSection({ deal, payments, investors }) {
     });
 
     const totalAmount = landPurchasePayments.reduce((sum, payment) => {
-      const amount = parseFloat(payment.amount) || 0;
-      console.log(`Adding LAND PURCHASE payment ${payment.id}: ₹${amount} (type: ${payment.payment_type})`);
-      return sum + amount;
+      console.log(`Adding land purchase payment ${payment.id}: ₹${payment.amount}`);
+      return sum + (parseFloat(payment.amount) || 0);
     }, 0);
     
-    console.log(`Land Purchase Total for ${investorName}: ₹${totalAmount} from ${landPurchasePayments.length} land_purchase payments`);
+    console.log(`Final land purchase result for ${investorName}: ₹${totalAmount} from ${landPurchasePayments.length} payments`);
     return { amount: totalAmount, count: landPurchasePayments.length };
   };
 
-  // Calculate miscellaneous payments (non-land_purchase) for an investor
-  const calculateMiscellaneousContribution = (investor, payments) => {
+  // Calculate completed miscellaneous payments for an investor
+  const calculateMiscellaneousPayments = (investor) => {
     if (!payments || !investor) return { amount: 0, count: 0 };
     
     const investorId = investor.id?.toString();
     const investorName = investor.investor_name || investor.name;
     
-    console.log(`\n=== P&L Miscellaneous: Calculating for investor: ${investorName} (ID: ${investorId}) ===`);
+    console.log(`\n=== Debug: Calculating MISCELLANEOUS for investor: ${investorName} (ID: ${investorId}) ===`);
     
     // Filter for completed non-land_purchase payments only
     const miscellaneousPayments = payments.filter(payment => {
-      const paymentStatus = payment.status === 'completed' || payment.status === 'success';
+      const isCompleted = payment.status === 'completed';
       const isMiscellaneous = payment.payment_type !== 'land_purchase';
       
-      if (!paymentStatus || !isMiscellaneous) {
+      if (!isCompleted || !isMiscellaneous) {
         return false;
       }
       
-      // Use same matching logic as above
+      // Use same matching logic as land purchase
       if (payment.paid_by_id?.toString() === investorId) {
+        console.log(`✅ Misc payment ${payment.id} matched by paid_by_id: ${payment.paid_by_id} === ${investorId}`);
         return true;
       }
       
       if (payment.paid_by?.toString() === investorId) {
+        console.log(`✅ Misc payment ${payment.id} matched by paid_by: ${payment.paid_by} === ${investorId}`);
         return true;
       }
       
       if (payment.paid_by && typeof payment.paid_by === 'string' && payment.paid_by.includes('_')) {
         const [type, id] = payment.paid_by.split('_');
         if (type === 'investor' && id === investorId) {
+          console.log(`✅ Misc payment ${payment.id} matched by parsed paid_by: "${payment.paid_by}" -> investor ID ${id} === ${investorId}`);
           return true;
         }
       }
       
       if (payment.paid_by_name === investorName) {
-        return true;
-      }
-      
-      const paymentName = (payment.paid_by_name || '').toLowerCase().trim();
-      const investorNameLower = (investorName || '').toLowerCase().trim();
-      
-      if (paymentName && investorNameLower && paymentName === investorNameLower) {
-        return true;
-      }
-      
-      if (paymentName && investorNameLower && 
-          (paymentName.includes(investorNameLower) || investorNameLower.includes(paymentName))) {
+        console.log(`✅ Misc payment ${payment.id} matched by paid_by_name: ${payment.paid_by_name} === ${investorName}`);
         return true;
       }
       
@@ -4241,115 +4163,209 @@ function ProfitLossSection({ deal, payments, investors }) {
     });
 
     const totalAmount = miscellaneousPayments.reduce((sum, payment) => {
-      const amount = parseFloat(payment.amount) || 0;
-      console.log(`Adding MISCELLANEOUS payment ${payment.id}: ₹${amount} (type: ${payment.payment_type})`);
-      return sum + amount;
+      console.log(`Adding miscellaneous payment ${payment.id}: ₹${payment.amount} (type: ${payment.payment_type})`);
+      return sum + (parseFloat(payment.amount) || 0);
     }, 0);
     
-    console.log(`Miscellaneous Total for ${investorName}: ₹${totalAmount} from ${miscellaneousPayments.length} miscellaneous payments`);
+    console.log(`Final miscellaneous result for ${investorName}: ₹${totalAmount} from ${miscellaneousPayments.length} payments`);
     return { amount: totalAmount, count: miscellaneousPayments.length };
   };
 
-  // Calculate total miscellaneous payments for all investors (for the summary row)
+  // Calculate total miscellaneous expenses for all completed payments
   const calculateTotalMiscellaneous = () => {
     if (!payments) return 0;
     
     return payments
       .filter(payment => 
-        (payment.status === 'completed' || payment.status === 'success') && 
+        payment.status === 'completed' && 
         payment.payment_type !== 'land_purchase'
       )
       .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
   };
 
-  // Calculate each investor's contribution and their share
-  const calculateInvestorData = (totalMiscellaneousExpenses) => {
-    if (!investors || investors.length === 0) return [];
-    
-    console.log("=== P&L Analysis Debug ===");
-    console.log("Total investors:", investors.length);
-    console.log("Land purchase amount:", landPurchaseAmount);
-    console.log("Selling price:", sellingPrice);
-    console.log("Total miscellaneous expenses:", totalMiscellaneousExpenses);
-    
-    return investors.map(investor => {
-      const investorName = investor.investor_name || investor.name || `Investor ${investor.id}`;
-      
-      console.log(`\n--- Processing Investor: ${investorName} (ID: ${investor.id}) ---`);
-      
-      // For P&L analysis, calculate both land purchase and miscellaneous contributions
-      const landPurchaseInvestment = calculateLandPurchaseContribution(investor, payments);
-      const investorContribution = landPurchaseInvestment.amount;
-      const paymentCount = landPurchaseInvestment.count;
-      
-      const miscellaneousInvestment = calculateMiscellaneousContribution(investor, payments);
-      const investorMiscellaneous = miscellaneousInvestment.amount;
-      const miscellaneousCount = miscellaneousInvestment.count;
-      
-      console.log(`  Land purchase paid: ₹${investorContribution} from ${paymentCount} land_purchase payments`);
-      console.log(`  Miscellaneous paid: ₹${investorMiscellaneous} from ${miscellaneousCount} miscellaneous payments`);
-      
-      // Get share percentage from investor record - use the percentage saved in buying section
-      let sharePercentage = 0;
-      if (investor.percentage_share && parseFloat(investor.percentage_share) > 0) {
-        sharePercentage = parseFloat(investor.percentage_share);
-        console.log(`  Using recorded percentage_share from buying section: ${sharePercentage}%`);
-      } else if (investor.investment_percentage && parseFloat(investor.investment_percentage) > 0) {
-        sharePercentage = parseFloat(investor.investment_percentage);
-        console.log(`  Using recorded investment_percentage: ${sharePercentage}%`);
-      } else if (investor.share_percentage && parseFloat(investor.share_percentage) > 0) {
-        sharePercentage = parseFloat(investor.share_percentage);
-        console.log(`  Using recorded share_percentage: ${sharePercentage}%`);
-      } else if (landPurchaseAmount > 0 && investorContribution > 0) {
-        sharePercentage = (investorContribution / landPurchaseAmount) * 100;
-        console.log(`  Calculated share based on contribution: ${sharePercentage}%`);
-      } else {
-        console.log(`  No share data available`);
-      }
-      
-      // Calculate net profit after all expenses (this is what gets distributed by percentage)
-      const netProfitAfterExpenses = sellingPrice - landPurchaseAmount - totalMiscellaneousExpenses;
-      
-      // Calculate investor's share of the net profit (by percentage)
-      const investorShareOfNetProfit = (netProfitAfterExpenses * sharePercentage) / 100;
-      
-      // Calculate investor's total return: their miscellaneous back + their % of remaining profit
-      const investorTotalReturn = investorMiscellaneous + investorShareOfNetProfit;
-      
-      // Calculate investor's net gain/loss (total return minus what they invested)
-      const investorNetGainLoss = investorTotalReturn - investorContribution - investorMiscellaneous;
-      // This simplifies to: investorShareOfNetProfit - investorContribution
-      
-      console.log(`  Net profit after all expenses: ₹${netProfitAfterExpenses}`);
-      console.log(`  Investor's share of net profit (${sharePercentage}%): ₹${investorShareOfNetProfit}`);
-      console.log(`  Investor gets back miscellaneous: ₹${investorMiscellaneous}`);
-      console.log(`  Investor's total return: ₹${investorTotalReturn}`);
-      console.log(`  Investor's total investment: ₹${investorContribution + investorMiscellaneous}`);
-      console.log(`  Investor's net gain/loss: ₹${investorNetGainLoss}`);
-      
-      const result = {
-        id: investor.id,
-        name: investorName,
-        contribution: investorContribution,
-        miscellaneous: investorMiscellaneous,
-        totalInvestment: investorContribution + investorMiscellaneous,
-        sharePercentage: sharePercentage,
-        shareOfNetProfit: investorShareOfNetProfit,
-        totalReturn: investorTotalReturn,
-        netGainLoss: investorShareOfNetProfit - investorContribution, // Only compare land investment vs profit share
-        paymentCount: paymentCount,
-        miscellaneousCount: miscellaneousCount,
-        hasInvestment: investorContribution > 0 || sharePercentage > 0 || investorMiscellaneous > 0
-      };
-      
-      return result;
-    }).filter(investor => investor.hasInvestment); // Show investors who have either contributed or have recorded shares
-  };
-
+  // Calculate investor data with corrected logic
   const totalMiscellaneous = calculateTotalMiscellaneous();
-  const investorData = calculateInvestorData(totalMiscellaneous);
-  const totalProfitLoss = sellingPrice - landPurchaseAmount - totalMiscellaneous;
+  
+  // Step 1: Subtract total miscellaneous from sale value first
+  const saleAfterMiscellaneous = sellingPrice - totalMiscellaneous;
+  
+  // Step 2: Calculate remaining amount to be distributed according to shares
+  const remainingForDistribution = saleAfterMiscellaneous;
+  
+  console.log('\n=== Overall Deal Calculation ===');
+  console.log(`- Purchase Price: ₹${landPurchaseAmount}`);
+  console.log(`- Selling Price: ₹${sellingPrice}`);
+  console.log(`- Total Miscellaneous (paperwork): ₹${totalMiscellaneous}`);
+  console.log(`- Sale after miscellaneous: ₹${sellingPrice} - ₹${totalMiscellaneous} = ₹${saleAfterMiscellaneous}`);
+  console.log(`- Remaining for distribution: ₹${remainingForDistribution}`);
+  
+  const investorData = investors && investors.length > 0 ? investors.map(investor => {
+    console.log('\n=== Investor Data Debug ===');
+    console.log('Investor:', investor);
+    console.log('Payments available:', payments ? payments.length : 0);
+    
+    const landPurchaseData = calculateLandPurchasePayments(investor);
+    const miscellaneousData = calculateMiscellaneousPayments(investor);
+    const sharePercentage = parseFloat(investor.percentage_share || investor.investment_percentage || investor.share_percentage || 0);
+    
+    // Step 3: Calculate investor's share from remaining amount
+    const shareFromRemaining = (remainingForDistribution * sharePercentage) / 100;
+    
+    // Step 4: Final return = miscellaneous refund + share from remaining
+    const finalReturn = miscellaneousData.amount + shareFromRemaining;
+    
+    // Step 5: Profit or Loss = final return - investor investment
+    const profitOrLoss = finalReturn - landPurchaseData.amount;
+    
+    console.log(`Investor ${investor.investor_name || investor.name}:`);
+    console.log(`- Land investment: ₹${landPurchaseData.amount}`);
+    console.log(`- Miscellaneous (paperwork): ₹${miscellaneousData.amount}`);
+    console.log(`- Share percentage: ${sharePercentage}%`);
+    console.log(`- Share from remaining: ₹${remainingForDistribution} × ${sharePercentage}% = ₹${shareFromRemaining}`);
+    console.log(`- Final return: ₹${miscellaneousData.amount} + ₹${shareFromRemaining} = ₹${finalReturn}`);
+    console.log(`- Profit/Loss: ₹${finalReturn} - ₹${landPurchaseData.amount} = ₹${profitOrLoss}`);
+    
+    // Determine status
+    let status = 'BREAK EVEN';
+    if (profitOrLoss > 0) {
+      status = 'PROFIT';
+      console.log(`- Status: ${status} of ₹${profitOrLoss}`);
+    } else if (profitOrLoss < 0) {
+      status = 'LOSS';
+      console.log(`- Status: ${status} of ₹${Math.abs(profitOrLoss)}`);
+    } else {
+      console.log(`- Status: ${status}`);
+    }
+    
+    return {
+      id: investor.id,
+      name: investor.investor_name || investor.name || `Investor ${investor.id}`,
+      contribution: landPurchaseData.amount,
+      miscellaneous: miscellaneousData.amount,
+      totalInvestment: landPurchaseData.amount,
+      sharePercentage: sharePercentage,
+      shareFromRemaining: shareFromRemaining,
+      totalReturn: finalReturn,
+      individualProfitLoss: profitOrLoss,
+      status: status,
+      paymentCount: landPurchaseData.count,
+      miscellaneousCount: miscellaneousData.count,
+      hasInvestment: landPurchaseData.amount > 0 || sharePercentage > 0 || miscellaneousData.amount > 0
+    };
+  }).filter(investor => investor.hasInvestment) : [];
 
+  // Calculate total profit/loss from all investors plus miscellaneous considerations
+  const investorTotalProfitLoss = investorData.reduce((sum, investor) => sum + investor.individualProfitLoss, 0);
+  // Calculate overall deal profit/loss including miscellaneous
+  const totalProfitLoss = sellingPrice - (landPurchaseAmount + totalMiscellaneous);
+  
+  console.log('\n=== Total P&L Calculation ===');
+  console.log('Individual investor P&L values:');
+  investorData.forEach(investor => {
+    console.log(`- ${investor.name}: ₹${investor.individualProfitLoss}`);
+  });
+  console.log(`- Investor Total P&L: ₹${investorTotalProfitLoss}`);
+  console.log(`- Total Miscellaneous: ₹${totalMiscellaneous}`);
+  console.log(`- Overall Deal P&L: ₹${sellingPrice} - (₹${landPurchaseAmount} + ₹${totalMiscellaneous}) = ₹${totalProfitLoss}`);
+  console.log(`- FINAL TOTAL P&L (including misc): ₹${totalProfitLoss}`);
+  console.log('============================\n');
+  
+  // Calculate totals for display
+  const totalInvestedAmount = investorData.reduce((sum, investor) => sum + investor.contribution, 0);
+  const totalReturnAmount = investorData.reduce((sum, investor) => sum + investor.totalReturn, 0);
+  
+  // Calculate straightforward land profit/loss for the Land Purchase Amount row
+  const landProfitLoss = sellingPrice - (landPurchaseAmount + totalMiscellaneous);
+  
+  console.log('\n=== Land Profit/Loss Calculation ===');
+  console.log(`- Selling Price: ₹${sellingPrice}`);
+  console.log(`- Land Purchase: ₹${landPurchaseAmount}`);
+  console.log(`- Total Miscellaneous: ₹${totalMiscellaneous}`);
+  console.log(`- Total Cost: ₹${landPurchaseAmount + totalMiscellaneous}`);
+  console.log(`- Land Profit/Loss: ₹${sellingPrice} - ₹${landPurchaseAmount + totalMiscellaneous} = ₹${landProfitLoss}`);
+  console.log(`- Status: ${landProfitLoss >= 0 ? 'PROFIT' : 'LOSS'} of ₹${Math.abs(landProfitLoss)}`);
+  console.log('=====================================\n');
+  
+  // Print function for P&L Analysis
+  const printPLAnalysis = () => {
+    const printWindow = window.open('', '_blank');
+    
+    let tableRows = '';
+    
+    // Add Land Purchase Amount row
+    tableRows += `
+      <tr>
+        <td>Land Purchase Amount</td>
+        <td style="text-align: right;">₹${landPurchaseAmount.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">₹${totalMiscellaneous.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">₹${sellingPrice.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">${landProfitLoss >= 0 ? '+' : '-'}₹${Math.abs(landProfitLoss).toLocaleString('en-IN')}</td>
+      </tr>`;
+    
+    // Add individual investor rows
+    investorData.forEach(investor => {
+      tableRows += `
+        <tr>
+          <td>${investor.name}</td>
+          <td style="text-align: right;">₹${investor.contribution.toLocaleString('en-IN')}</td>
+          <td style="text-align: right;">₹${investor.miscellaneous.toLocaleString('en-IN')}</td>
+          <td style="text-align: right;">₹${investor.totalReturn.toLocaleString('en-IN')}</td>
+          <td style="text-align: right;">${investor.individualProfitLoss >= 0 ? '+' : '-'}₹${Math.abs(investor.individualProfitLoss).toLocaleString('en-IN')}</td>
+        </tr>`;
+    });
+    
+    // Add total row
+    tableRows += `
+      <tr style="font-weight: bold; border-top: 2px solid #000;">
+        <td>TOTAL</td>
+        <td style="text-align: right;">₹${totalInvestedAmount.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">₹${totalMiscellaneous.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">₹${totalReturnAmount.toLocaleString('en-IN')}</td>
+        <td style="text-align: right;">${totalProfitLoss >= 0 ? '+' : '-'}₹${Math.abs(totalProfitLoss).toLocaleString('en-IN')}</td>
+      </tr>`;
+    
+    const printContent = `
+      <html>
+        <head>
+          <title>Profit & Loss Analysis - Deal ${deal?.id || id || 'Unknown'}</title>
+          <style>
+            body { font-family: 'Courier New', monospace; margin: 20px; }
+            h1 { text-align: center; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            th, td { padding: 8px 12px; border: 1px solid #000; }
+            th { background-color: #f0f0f0; font-weight: bold; text-align: center; }
+            .deal-info { margin-bottom: 20px; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>Profit & Loss Analysis</h1>
+          <div class="deal-info">
+            <strong>Deal ID:</strong> ${deal?.id || id || 'N/A'}<br>
+            <strong>Date:</strong> ${new Date().toLocaleDateString('en-IN')}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th>Land Purchase</th>
+                <th>Miscellaneous</th>
+                <th>Total Return</th>
+                <th>Profit/Loss</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </body>
+      </html>`;
+    
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    printWindow.print();
+  };
+  
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -4360,6 +4376,15 @@ function ProfitLossSection({ deal, payments, investors }) {
               <h2 className="text-2xl font-bold text-slate-900">Profit & Loss Analysis</h2>
               <p className="text-sm text-slate-600 mt-1">Complete financial breakdown for this deal</p>
             </div>
+            <button
+              onClick={printPLAnalysis}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>Print Analysis</span>
+            </button>
           </div>
         </div>
 
@@ -4372,7 +4397,7 @@ function ProfitLossSection({ deal, payments, investors }) {
                 <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Land Purchase</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Miscellaneous</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Selling Price / Share</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Profit / Loss</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Profit/Loss</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -4389,7 +4414,7 @@ function ProfitLossSection({ deal, payments, investors }) {
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="text-lg font-semibold text-orange-700">
-                    {formatAmount(calculateTotalMiscellaneous())}
+                    {formatAmount(totalMiscellaneous)}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right">
@@ -4399,9 +4424,9 @@ function ProfitLossSection({ deal, payments, investors }) {
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className={`text-lg font-bold ${
-                    totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'
+                    landProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    {totalProfitLoss >= 0 ? '+' : ''}{formatAmount(totalProfitLoss)}
+                    {landProfitLoss >= 0 ? '+' : ''}{formatAmount(Math.abs(landProfitLoss))}
                   </div>
                 </td>
               </tr>
@@ -4430,7 +4455,7 @@ function ProfitLossSection({ deal, payments, investors }) {
                 </td>
                 <td className="px-6 py-2 text-right">
                   <div className="text-sm font-medium text-slate-600">
-                    Net Gain/Loss
+                    Profit/Loss
                   </div>
                 </td>
               </tr>
@@ -4441,11 +4466,9 @@ function ProfitLossSection({ deal, payments, investors }) {
                   <td className="px-6 py-4">
                     <div className="font-medium text-slate-900">{investor.name}</div>
                     <div className="text-sm text-slate-500">
-                      {investor.sharePercentage.toFixed(2)}% share • {investor.paymentCount} completed payment(s)
+                      {investor.sharePercentage.toFixed(2)}% share • {investor.paymentCount} completed land purchase payment(s)
                       {investor.contribution === 0 && investor.sharePercentage > 0 && (
-                        <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">
-                          No completed payments yet
-                        </span>
+                        <span className="text-orange-600"> • No payments yet</span>
                       )}
                     </div>
                   </td>
@@ -4456,7 +4479,12 @@ function ProfitLossSection({ deal, payments, investors }) {
                       {formatAmount(investor.contribution)}
                     </div>
                     {investor.contribution === 0 && investor.sharePercentage > 0 && (
-                      <div className="text-xs text-gray-500 mt-1">Pending payments</div>
+                      <div className="text-xs text-gray-500 mt-1">No completed land purchase payments</div>
+                    )}
+                    {investor.paymentCount > 0 && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        From {investor.paymentCount} completed payment(s)
+                      </div>
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -4472,33 +4500,35 @@ function ProfitLossSection({ deal, payments, investors }) {
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="text-lg font-semibold text-green-700">
+                    <div className={`text-lg font-semibold ${
+                      investor.totalReturn < investor.contribution ? 'text-red-600' : 'text-green-700'
+                    }`}>
                       {formatAmount(investor.totalReturn)}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      Misc: {formatAmount(investor.miscellaneous)} + Share: {formatAmount(investor.shareOfNetProfit)}
+                      Misc Refund: {formatAmount(investor.miscellaneous)} + Share: {formatAmount(investor.shareFromRemaining)}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className={`text-lg font-bold ${
-                      investor.netGainLoss >= 0 ? 'text-green-600' : 'text-red-600'
+                      investor.individualProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {investor.netGainLoss >= 0 ? '+' : ''}{formatAmount(Math.abs(investor.netGainLoss))}
+                      {investor.individualProfitLoss >= 0 ? '+' : ''}{formatAmount(Math.abs(investor.individualProfitLoss))}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      vs Land Investment: {formatAmount(investor.contribution)}
+                      Return: {formatAmount(investor.totalReturn)} - Land Investment: {formatAmount(investor.contribution)}
                     </div>
                   </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="4" className="px-6 py-8 text-center">
+                  <td colSpan="5" className="px-6 py-8 text-center">
                     <div className="text-gray-500">
                       <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                       </svg>
-                      <p className="text-sm">No investors with completed payments found</p>
-                      <p className="text-xs text-gray-400 mt-1">Investors will appear here once they make payments or have recorded share percentages</p>
+                      <p className="text-sm">No investors with completed land purchase payments found</p>
+                      <p className="text-xs text-gray-400 mt-1">Investors will appear here once they make completed land purchase payments</p>
                     </div>
                   </td>
                 </tr>
@@ -4517,73 +4547,26 @@ function ProfitLossSection({ deal, payments, investors }) {
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="text-xl font-bold text-orange-700">
-                    {formatAmount(calculateTotalMiscellaneous())}
+                    {formatAmount(totalMiscellaneous)}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <div className="text-xl font-bold text-green-700">
-                    {formatAmount(sellingPrice)}
+                  <div className={`text-xl font-bold ${
+                    totalReturnAmount < totalInvestedAmount ? 'text-red-600' : 'text-green-600'
+                  }`}>
+                    {formatAmount(totalReturnAmount)}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className={`text-xl font-bold ${
                     totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    {totalProfitLoss >= 0 ? '+' : ''}{formatAmount(totalProfitLoss)}
+                    {totalProfitLoss >= 0 ? '+' : ''}{formatAmount(Math.abs(totalProfitLoss))}
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
-        </div>
-
-        {/* Calculation Explanation */}
-        <div className="p-6 border-t border-slate-200 bg-blue-50">
-          <h3 className="text-lg font-semibold text-blue-900 mb-3">How Profit is Calculated</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <div className="text-sm text-blue-800">
-                <strong>Step 1:</strong> Calculate Net Profit
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                Net Profit = Selling Price - Land Purchase - All Miscellaneous
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                = {formatAmount(sellingPrice)} - {formatAmount(landPurchaseAmount)} - {formatAmount(totalMiscellaneous)}
-              </div>
-              <div className="text-sm font-semibold text-blue-900 pl-4">
-                = {formatAmount(totalProfitLoss)}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm text-blue-800">
-                <strong>Step 2:</strong> Investor Returns
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                1. Get miscellaneous money back
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                2. Get % share of remaining profit
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                Total Return = Misc Back + (Net Profit × %)
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm text-blue-800">
-                <strong>Step 3:</strong> Calculate Gain/Loss
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                Compare profit share vs land investment only
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                Gain/Loss = Profit Share - Land Investment
-              </div>
-              <div className="text-sm text-blue-700 pl-4">
-                (Miscellaneous is returned, so not counted as loss)
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Summary Cards */}
@@ -4610,7 +4593,7 @@ function ProfitLossSection({ deal, payments, investors }) {
             <div className="bg-white p-4 rounded-lg border border-slate-200">
               <div className="text-sm text-slate-600">ROI</div>
               <div className={`text-xl font-bold ${totalProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {(landPurchaseAmount + totalMiscellaneous) > 0 ? ((totalProfitLoss / (landPurchaseAmount + totalMiscellaneous)) * 100).toFixed(2) : '0.00'}%
+                {landPurchaseAmount > 0 ? ((totalProfitLoss / landPurchaseAmount) * 100).toFixed(2) : '0.00'}%
               </div>
             </div>
           </div>

@@ -40,7 +40,7 @@ export default function AdminUsers() {
     }
     
     const userData = getUser();
-    if (!hasPermission(userData, PERMISSIONS.ADMIN_ACCESS)) {
+    if (!hasPermission(userData, PERMISSIONS.SYSTEM_ADMIN)) {
       router.push('/dashboard');
       return;
     }

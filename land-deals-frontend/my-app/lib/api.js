@@ -241,6 +241,7 @@ export const ownersAPI = {
 
 export const paymentsAPI = {
   list: (dealId) => api.get(`/payments/${dealId}`),
+  listByDeal: (dealId) => api.get(`/payments/${dealId}`), // Alias for list function
   listAll: () => api.get('/payments'), // New endpoint for all payments across deals
   detail: (dealId, paymentId) => api.get(`/payments/${dealId}/${paymentId}`),
   // create accepts optional options object: { params: { force: true } }

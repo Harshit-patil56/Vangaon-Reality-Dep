@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { getUser, logout, isAuthenticated } from '../lib/auth';
+import { hasPermission, PERMISSIONS } from '../lib/permissions';
 import Navbar from '../components/layout/Navbar';
 import { Search } from 'lucide-react';
 import api, { investorsAPI } from '../lib/api';
@@ -94,6 +95,14 @@ export default function Investors() {
     }
     
     const userData = getUser();
+    
+    // Check if user has permission to view investors
+    if (!hasPermission(userData, PERMISSIONS.INVESTORS_VIEW)) {
+      toast.error('Access denied: insufficient permissions');
+      router.push('/dashboard');
+      return;
+    }
+    
     setUser(userData);
     setAuthChecked(true);
     fetchInvestors(1, true); // Load first page initially

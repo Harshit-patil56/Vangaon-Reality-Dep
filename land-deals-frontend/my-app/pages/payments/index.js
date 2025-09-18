@@ -67,7 +67,7 @@ export default function PaymentsIndex() {
     }
   }, [])
 
-  // Function to get display name from payment data
+  // Function to get display name from payment data - enhanced for consistency
   const getPaymentDisplayName = useCallback((payment, field) => {
     // Check if we have the new name fields first
     if (field === 'paid_by' && payment.paid_by_name) {
@@ -79,7 +79,7 @@ export default function PaymentsIndex() {
     
     // Fallback to original field but clean up ID format
     const value = payment[field];
-    if (!value) return 'N/A';
+    if (!value) return 'Not specified';
     
     // If it's in ID format (e.g., "investor_123"), extract the name from data
     if (value.includes('_')) {
@@ -88,16 +88,49 @@ export default function PaymentsIndex() {
       
       if (type === 'investor' && Array.isArray(investors)) {
         const investor = investors.find(inv => inv.id === numericId);
-        return investor ? investor.investor_name : value;
+        if (investor) {
+          return (
+            <span className="inline-flex items-center space-x-1">
+              <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-800 rounded">Investor</span>
+              <span>{investor.investor_name}</span>
+            </span>
+          );
+        }
       }
       
       if (type === 'owner' && Array.isArray(owners)) {
         const owner = owners.find(own => own.id === numericId);
-        return owner ? owner.name : value;
+        if (owner) {
+          return (
+            <span className="inline-flex items-center space-x-1">
+              <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-800 rounded">Owner</span>
+              <span>{owner.name}</span>
+            </span>
+          );
+        }
+      }
+      
+      if (type === 'buyer' && Array.isArray(owners)) {
+        // Note: buyers might be stored in owners table or separate buyers table
+        const buyer = owners.find(own => own.id === numericId);
+        if (buyer) {
+          return (
+            <span className="inline-flex items-center space-x-1">
+              <span className="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-800 rounded">Buyer</span>
+              <span>{buyer.name}</span>
+            </span>
+          );
+        }
       }
     }
     
-    return value;
+    // Clean up any role prefixes for display
+    const cleanValue = value
+      .replace(/^(Owner|Investor|Buyer)\s*-\s*/i, '')
+      .replace(/^(Owner|Investor|Buyer):\s*/i, '')
+      .trim();
+    
+    return cleanValue;
   }, [investors, owners])
 
   const calculatePaymentStats = useCallback((paymentsData) => {

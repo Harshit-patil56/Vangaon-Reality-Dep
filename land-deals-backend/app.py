@@ -258,16 +258,14 @@ def token_required(f):
             if token.startswith('Bearer '):
                 token = token[7:]
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            # expose decoded user on request for permission checks
-            try:
-                request.user = {
-                    'id': data.get('user_id'),
-                    'username': data.get('username'),
-                    'role': data.get('role')
-                }
-            except Exception:
-                request.user = {'id': data.get('user_id')}
-            current_user = data['user_id']
+            # Create current_user object with all necessary data
+            current_user = {
+                'id': data.get('user_id'),
+                'username': data.get('username'),
+                'role': data.get('role')
+            }
+            # Also expose decoded user on request for permission checks
+            request.user = current_user
         except:
             return jsonify({'error': 'Token is invalid'}), 401
         
@@ -287,7 +285,7 @@ def user_access_control(f):
         try:
             conn = get_db_connection()
             cur = conn.cursor(dictionary=True)
-            cur.execute("SELECT role, owner_id, investor_id FROM users WHERE id = %s", (current_user,))
+            cur.execute("SELECT role, owner_id, investor_id FROM users WHERE id = %s", (current_user['id'],))
             user_data = cur.fetchone()
             
             if not user_data:
@@ -358,13 +356,31 @@ def list_all_payments(current_user):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get all payments with deal information (fixed column references)
+        # Get all payments with deal information and resolved names
         cursor.execute("""
             SELECT p.*, 
                    COALESCE(d.project_name, CONCAT('Deal #', d.id)) as deal_name, 
                    COALESCE(d.village, d.taluka, d.location) as deal_location,
                    s.name as deal_state,
-                   dist.name as deal_district
+                   dist.name as deal_district,
+                   CASE 
+                     WHEN p.paid_by LIKE 'owner_%' THEN 
+                       (SELECT o.name FROM owners o WHERE o.id = CAST(SUBSTRING(p.paid_by, 7) AS UNSIGNED))
+                     WHEN p.paid_by LIKE 'investor_%' THEN 
+                       (SELECT i.investor_name FROM investors i WHERE i.id = CAST(SUBSTRING(p.paid_by, 10) AS UNSIGNED))
+                     WHEN p.paid_by LIKE 'buyer_%' THEN 
+                       (SELECT b.name FROM buyers b WHERE b.id = CAST(SUBSTRING(p.paid_by, 7) AS UNSIGNED))
+                     ELSE p.paid_by
+                   END as paid_by_name,
+                   CASE 
+                     WHEN p.paid_to LIKE 'owner_%' THEN 
+                       (SELECT o.name FROM owners o WHERE o.id = CAST(SUBSTRING(p.paid_to, 7) AS UNSIGNED))
+                     WHEN p.paid_to LIKE 'investor_%' THEN 
+                       (SELECT i.investor_name FROM investors i WHERE i.id = CAST(SUBSTRING(p.paid_to, 10) AS UNSIGNED))
+                     WHEN p.paid_to LIKE 'buyer_%' THEN 
+                       (SELECT b.name FROM buyers b WHERE b.id = CAST(SUBSTRING(p.paid_to, 7) AS UNSIGNED))
+                     ELSE p.paid_to
+                   END as paid_to_name
             FROM payments p 
             JOIN deals d ON p.deal_id = d.id 
             LEFT JOIN states s ON d.state_id = s.id
@@ -405,7 +421,30 @@ def list_payments(deal_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT p.* FROM payments p WHERE p.deal_id = %s ORDER BY p.payment_date DESC", (deal_id,))
+        cursor.execute("""
+            SELECT p.*,
+                   CASE 
+                     WHEN p.paid_by LIKE 'owner_%' THEN 
+                       (SELECT o.name FROM owners o WHERE o.id = CAST(SUBSTRING(p.paid_by, 7) AS UNSIGNED))
+                     WHEN p.paid_by LIKE 'investor_%' THEN 
+                       (SELECT i.investor_name FROM investors i WHERE i.id = CAST(SUBSTRING(p.paid_by, 10) AS UNSIGNED))
+                     WHEN p.paid_by LIKE 'buyer_%' THEN 
+                       (SELECT b.name FROM buyers b WHERE b.id = CAST(SUBSTRING(p.paid_by, 7) AS UNSIGNED))
+                     ELSE p.paid_by
+                   END as paid_by_name,
+                   CASE 
+                     WHEN p.paid_to LIKE 'owner_%' THEN 
+                       (SELECT o.name FROM owners o WHERE o.id = CAST(SUBSTRING(p.paid_to, 7) AS UNSIGNED))
+                     WHEN p.paid_to LIKE 'investor_%' THEN 
+                       (SELECT i.investor_name FROM investors i WHERE i.id = CAST(SUBSTRING(p.paid_to, 10) AS UNSIGNED))
+                     WHEN p.paid_to LIKE 'buyer_%' THEN 
+                       (SELECT b.name FROM buyers b WHERE b.id = CAST(SUBSTRING(p.paid_to, 7) AS UNSIGNED))
+                     ELSE p.paid_to
+                   END as paid_to_name
+            FROM payments p 
+            WHERE p.deal_id = %s 
+            ORDER BY p.payment_date DESC
+        """, (deal_id,))
         rows = cursor.fetchall() or []
 
         # convert dates to isoformat where applicable
@@ -983,7 +1022,7 @@ def create_payment(current_user, deal_id):
             cursor.execute(
                 """INSERT INTO payments (deal_id, party_type, party_id, amount, currency, payment_date, due_date, payment_mode, reference, notes, description, category, paid_by, paid_to, status, created_by, payment_type, is_installment, installment_number, total_installments, parent_amount, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (deal_id, party_type, party_id, amount, currency, payment_date, parsed_due_date, payment_mode, reference, notes, description, category, paid_by, paid_to, status, current_user, payment_type, is_installment, installment_number, total_installments, parent_amount, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
+                (deal_id, party_type, party_id, amount, currency, payment_date, parsed_due_date, payment_mode, reference, notes, description, category, paid_by, paid_to, status, current_user['id'], payment_type, is_installment, installment_number, total_installments, parent_amount, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
             )
         except mysql.connector.Error as e:
             # Try with payment_type but without enhanced fields (for backward compatibility)
@@ -991,14 +1030,14 @@ def create_payment(current_user, deal_id):
                 cursor.execute(
                     """INSERT INTO payments (deal_id, party_type, party_id, amount, currency, payment_date, payment_mode, reference, notes, created_by, payment_type, is_installment, installment_number, total_installments, parent_amount, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (deal_id, party_type, party_id, amount, currency, payment_date, payment_mode, reference, notes, current_user, payment_type, is_installment, installment_number, total_installments, parent_amount, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
+                    (deal_id, party_type, party_id, amount, currency, payment_date, payment_mode, reference, notes, current_user['id'], payment_type, is_installment, installment_number, total_installments, parent_amount, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
                 )
             except mysql.connector.Error as e2:
                 # Final fallback to basic fields only
                 cursor.execute(
                     """INSERT INTO payments (deal_id, party_type, party_id, amount, currency, payment_date, payment_mode, reference, notes, created_by, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (deal_id, party_type, party_id, amount, currency, payment_date, payment_mode, reference, notes, current_user, payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
+                    (deal_id, party_type, party_id, amount, currency, payment_date, payment_mode, reference, notes, current_user['id'], payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no)
                 )
         payment_id = cursor.lastrowid
 
@@ -1162,7 +1201,7 @@ def split_payment_into_installments(current_user, deal_id):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 deal_id, amount, 'INR', parsed_payment_date, parsed_due_date, payment_mode, 
-                reference, notes, description, category, paid_by, paid_to, status, current_user, 
+                reference, notes, description, category, paid_by, paid_to, status, current_user['id'], 
                 payment_type, True, i, total_installments, parent_amount,
                 payer_bank_name, payer_bank_account_no, receiver_bank_name, receiver_bank_account_no
             ))
@@ -1284,6 +1323,53 @@ def ensure_payment_schema():
     except Exception as e:
         # Don't fail the payment update if schema update fails
         # The update function will check which columns exist anyway
+        pass  # Log to application logs instead of console
+    finally:
+        if conn:
+            conn.close()
+
+def ensure_users_schema():
+    """Ensure the users table has all required columns for role-based access"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check existing columns first
+        cursor.execute("DESCRIBE users")
+        existing_columns = {row[0] for row in cursor.fetchall()}
+        
+        # Define columns to add if they don't exist
+        columns_to_add = [
+            ("role", "ALTER TABLE users ADD COLUMN role ENUM('admin','auditor','user') DEFAULT 'user'"),
+            ("full_name", "ALTER TABLE users ADD COLUMN full_name VARCHAR(100) DEFAULT NULL"),
+            ("owner_id", "ALTER TABLE users ADD COLUMN owner_id INT DEFAULT NULL"),
+            ("investor_id", "ALTER TABLE users ADD COLUMN investor_id INT DEFAULT NULL"),
+            ("mobile", "ALTER TABLE users ADD COLUMN mobile VARCHAR(15) DEFAULT NULL")
+        ]
+        
+        # Add missing columns one by one
+        for column_name, alter_sql in columns_to_add:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(alter_sql)
+                    conn.commit()
+                except mysql.connector.Error as e:
+                    # Check if error is "column already exists" - that's OK
+                    if "Duplicate column name" in str(e) or "already exists" in str(e):
+                        pass  # Column already exists, continue
+                    else:
+                        pass  # Log error to application logs
+                    pass
+        
+        # Ensure admin user has admin role
+        try:
+            cursor.execute("UPDATE users SET role = 'admin' WHERE username = 'admin' AND role IS NULL")
+            conn.commit()
+        except Exception as e:
+            pass  # Log to application logs
+        
+    except Exception as e:
         pass  # Log to application logs instead of console
     finally:
         if conn:
@@ -1492,22 +1578,9 @@ def delete_payment(current_user, deal_id, payment_id):
         cursor.execute("SELECT id, file_path FROM payment_proofs WHERE payment_id = %s", (payment_id,))
         proofs = cursor.fetchall()
 
-        # Permission check: only admins or creator of payment can delete
-        try:
-            cursor.execute("SELECT created_by FROM payments WHERE id = %s AND deal_id = %s", (payment_id, deal_id))
-            p = cursor.fetchone()
-            created_by = p.get('created_by') if p else None
-        except Exception:
-            created_by = None
-
-        role = None
-        try:
-            role = request.user.get('role')
-        except Exception:
-            role = None
-
-        if not (role == 'admin' or created_by == current_user):
-            return jsonify({'error': 'forbidden'}), 403
+        # Permission check: only admins can delete payments
+        if current_user.get('role') != 'admin':
+            return jsonify({'error': 'Only admin users can delete payments'}), 403
 
         # Delete DB rows for proofs
         cursor.execute("DELETE FROM payment_proofs WHERE payment_id = %s", (payment_id,))
@@ -1620,7 +1693,7 @@ def create_investor_to_owner_payment(current_user, deal_id):
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 deal_id, 'investor', investor_id, amount, 'INR', parsed_payment_date,
-                payment_mode, reference, notes, description, 'completed', current_user,
+                payment_mode, reference, notes, description, 'completed', current_user['id'],
                 'investor_to_owner', investor['investor_name'], owner['name']
             ))
             
@@ -2252,8 +2325,30 @@ def get_payment_detail(deal_id, payment_id):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get payment basic info
-        cursor.execute("SELECT * FROM payments WHERE deal_id = %s AND id = %s", (deal_id, payment_id))
+        # Get payment basic info with resolved names
+        cursor.execute("""
+            SELECT p.*,
+                   CASE 
+                     WHEN p.paid_by LIKE 'owner_%' THEN 
+                       (SELECT o.name FROM owners o WHERE o.id = CAST(SUBSTRING(p.paid_by, 7) AS UNSIGNED))
+                     WHEN p.paid_by LIKE 'investor_%' THEN 
+                       (SELECT i.investor_name FROM investors i WHERE i.id = CAST(SUBSTRING(p.paid_by, 10) AS UNSIGNED))
+                     WHEN p.paid_by LIKE 'buyer_%' THEN 
+                       (SELECT b.name FROM buyers b WHERE b.id = CAST(SUBSTRING(p.paid_by, 7) AS UNSIGNED))
+                     ELSE p.paid_by
+                   END as paid_by_name,
+                   CASE 
+                     WHEN p.paid_to LIKE 'owner_%' THEN 
+                       (SELECT o.name FROM owners o WHERE o.id = CAST(SUBSTRING(p.paid_to, 7) AS UNSIGNED))
+                     WHEN p.paid_to LIKE 'investor_%' THEN 
+                       (SELECT i.investor_name FROM investors i WHERE i.id = CAST(SUBSTRING(p.paid_to, 10) AS UNSIGNED))
+                     WHEN p.paid_to LIKE 'buyer_%' THEN 
+                       (SELECT b.name FROM buyers b WHERE b.id = CAST(SUBSTRING(p.paid_to, 7) AS UNSIGNED))
+                     ELSE p.paid_to
+                   END as paid_to_name
+            FROM payments p 
+            WHERE p.deal_id = %s AND p.id = %s
+        """, (deal_id, payment_id))
         payment = cursor.fetchone()
         
         if not payment:
@@ -2453,10 +2548,10 @@ def upload_payment_proof(current_user, deal_id, payment_id):
         cursor = conn.cursor()
         # include doc_type if column exists (migration adds it)
         try:
-            cursor.execute("INSERT INTO payment_proofs (payment_id, file_path, uploaded_by, doc_type) VALUES (%s,%s,%s,%s)", (payment_id, web_rel, current_user, doc_type))
+            cursor.execute("INSERT INTO payment_proofs (payment_id, file_path, uploaded_by, doc_type) VALUES (%s,%s,%s,%s)", (payment_id, web_rel, current_user['id'], doc_type))
         except Exception:
             # fallback if column doesn't exist
-            cursor.execute("INSERT INTO payment_proofs (payment_id, file_path, uploaded_by) VALUES (%s,%s,%s)", (payment_id, web_rel, current_user))
+            cursor.execute("INSERT INTO payment_proofs (payment_id, file_path, uploaded_by) VALUES (%s,%s,%s)", (payment_id, web_rel, current_user['id']))
         conn.commit()
         proof_id = cursor.lastrowid
     except mysql.connector.Error as e:
@@ -2647,7 +2742,12 @@ def register():
 def delete_deal(current_user, deal_id):
     """
     Delete a deal and all its associated data (owners, buyers, investors, expenses, documents)
+    Only admin users can delete deals.
     """
+    # Check if user has admin role
+    if current_user.get('role') != 'admin':
+        return jsonify({'error': 'Only admin users can delete deals'}), 403
+        
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -3144,12 +3244,39 @@ def get_deals(current_user):
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         
-        cursor.execute("""
-            SELECT d.*, u.full_name as created_by_name 
-            FROM deals d 
-            LEFT JOIN users u ON d.created_by = u.id 
-            ORDER BY d.created_at DESC
-        """)
+        # Get user role and permissions from database
+        cursor.execute("SELECT role, owner_id, investor_id FROM users WHERE id = %s", (current_user['id'],))
+        user_data = cursor.fetchone()
+        
+        if not user_data:
+            return jsonify({'error': 'User not found'}), 403
+        
+        user_role = user_data['role']
+        user_investor_id = user_data['investor_id']
+        
+        # Build query based on user role
+        if user_role == 'user':
+            # Users can only see deals where they are investors
+            if user_investor_id:
+                cursor.execute("""
+                    SELECT d.*, u.full_name as created_by_name 
+                    FROM deals d 
+                    LEFT JOIN users u ON d.created_by = u.id 
+                    WHERE d.id IN (SELECT deal_id FROM investors WHERE id = %s)
+                    ORDER BY d.created_at DESC
+                """, (user_investor_id,))
+            else:
+                # User has no investor assignments, return empty result
+                return jsonify([])
+        else:
+            # Admin and auditor roles can see all deals
+            cursor.execute("""
+                SELECT d.*, u.full_name as created_by_name 
+                FROM deals d 
+                LEFT JOIN users u ON d.created_by = u.id 
+                ORDER BY d.created_at DESC
+            """)
+        
         deals = cursor.fetchall()
         
         # Convert datetime objects to strings for JSON serialization
@@ -3174,11 +3301,23 @@ def get_deals_paginated(current_user):
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         
+        # Get user role and permissions from database
+        cursor.execute("SELECT role, owner_id, investor_id FROM users WHERE id = %s", (current_user['id'],))
+        user_data = cursor.fetchone()
+        
+        if not user_data:
+            return jsonify({'error': 'User not found'}), 403
+        
+        user_role = user_data['role']
+        user_investor_id = user_data['investor_id']
+        user_owner_id = user_data['owner_id']
+        
         # Get query parameters
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 5))
         year_filter = request.args.get('year')
         status_filter = request.args.get('status')
+        search_term = request.args.get('search', '').strip()
         
         # Calculate offset
         offset = (page - 1) * limit
@@ -3187,6 +3326,27 @@ def get_deals_paginated(current_user):
         where_conditions = []
         params = []
         
+        # Role-based access control
+        if user_role == 'user':
+            # Users can only see deals where they are investors
+            if user_investor_id:
+                where_conditions.append("d.id IN (SELECT deal_id FROM investors WHERE id = %s)")
+                params.append(user_investor_id)
+            else:
+                # User has no investor assignments, return empty result
+                return jsonify({
+                    'deals': [],
+                    'pagination': {
+                        'currentPage': page,
+                        'totalPages': 0,
+                        'totalCount': 0,
+                        'itemsPerPage': limit,
+                        'hasNextPage': False,
+                        'hasPrevPage': False
+                    }
+                })
+        # Admin and auditor roles can see all deals (no additional filtering)
+        
         if year_filter:
             where_conditions.append("YEAR(d.purchase_date) = %s")
             params.append(year_filter)
@@ -3194,6 +3354,42 @@ def get_deals_paginated(current_user):
         if status_filter and status_filter != 'all':
             where_conditions.append("d.status = %s")
             params.append(status_filter)
+        
+        # Search functionality - search in deal properties
+        if search_term:
+            search_conditions = []
+            search_params = []
+            
+            # Search in project name
+            search_conditions.append("d.project_name LIKE %s")
+            search_params.append(f"%{search_term}%")
+            
+            # Search in survey number
+            search_conditions.append("d.survey_number LIKE %s")
+            search_params.append(f"%{search_term}%")
+            
+            # Search in location fields (village, taluka)
+            search_conditions.append("d.village LIKE %s")
+            search_params.append(f"%{search_term}%")
+            
+            search_conditions.append("d.taluka LIKE %s")
+            search_params.append(f"%{search_term}%")
+            
+            # Search in deal ID (convert to string for LIKE search)
+            search_conditions.append("CAST(d.id AS CHAR) LIKE %s")
+            search_params.append(f"%{search_term}%")
+            
+            # Search in status
+            search_conditions.append("d.status LIKE %s")
+            search_params.append(f"%{search_term}%")
+            
+            # Search in purchase date (convert to string for LIKE search)
+            search_conditions.append("DATE_FORMAT(d.purchase_date, '%Y-%m-%d') LIKE %s")
+            search_params.append(f"%{search_term}%")
+            
+            # Combine search conditions with OR
+            where_conditions.append("(" + " OR ".join(search_conditions) + ")")
+            params.extend(search_params)
         
         where_clause = ""
         if where_conditions:
@@ -3253,30 +3449,98 @@ def get_deals_paginated(current_user):
 @token_required  
 def get_deals_stats(current_user):
     """Get deal statistics for dashboard"""
+    connection = None
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # Get status counts
-        cursor.execute("""
+        # First ensure users schema exists
+        try:
+            ensure_users_schema()
+        except Exception as e:
+            print(f"[WARNING] Could not ensure users schema: {e}")
+        
+        # Get user role and permissions from database with fallback
+        try:
+            cursor.execute("SELECT role, owner_id, investor_id FROM users WHERE id = %s", (current_user['id'],))
+            user_data = cursor.fetchone()
+        except mysql.connector.Error as e:
+            if "Unknown column" in str(e):
+                # Columns don't exist yet, treat as admin for backward compatibility
+                user_data = {'role': 'admin', 'owner_id': None, 'investor_id': None}
+            else:
+                raise
+        
+        if not user_data:
+            return jsonify({'error': 'User not found'}), 403
+        
+        user_role = user_data.get('role', 'admin')  # Default to admin if role is None
+        user_investor_id = user_data.get('investor_id')
+        
+        # Build WHERE clause for role-based filtering
+        where_clause = ""
+        params = []
+        
+        if user_role == 'user':
+            # Users can only see deals where they are investors
+            if user_investor_id:
+                where_clause = "WHERE EXISTS (SELECT 1 FROM investors i WHERE i.deal_id = d.id AND i.id = %s)"
+                params.append(user_investor_id)
+            else:
+                # User has no investor assignments, return zero stats
+                return jsonify({
+                    'total': 0,
+                    'active': 0,
+                    'closed': 0,
+                    'commission': 0,
+                    'years': []
+                })
+        
+        # Get status counts with role-based filtering
+        stats_query = f"""
             SELECT 
                 COUNT(*) as total,
-                SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as active,
-                SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
-                SUM(CASE WHEN status = 'commission' THEN 1 ELSE 0 END) as commission
-            FROM deals
-        """)
+                SUM(CASE WHEN d.status = 'open' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN d.status = 'closed' THEN 1 ELSE 0 END) as closed,
+                SUM(CASE WHEN d.status = 'commission' THEN 1 ELSE 0 END) as commission
+            FROM deals d
+            {where_clause}
+        """
+        cursor.execute(stats_query, params)
         stats = cursor.fetchone()
         
-        # Get available years
-        cursor.execute("""
-            SELECT DISTINCT YEAR(purchase_date) as year 
-            FROM deals 
-            WHERE purchase_date IS NOT NULL 
-            ORDER BY year DESC
-        """)
-        years_result = cursor.fetchall()
-        years = [row['year'] for row in years_result]
+        # Get available years with role-based filtering, safely handling purchase_date
+        try:
+            # Build the WHERE clause for years query
+            years_where_parts = []
+            years_params = []
+            
+            if user_role == 'user':
+                # Users can only see deals where they are investors
+                if user_investor_id:
+                    years_where_parts.append("EXISTS (SELECT 1 FROM investors i WHERE i.deal_id = d.id AND i.id = %s)")
+                    years_params.append(user_investor_id)
+            
+            years_where_parts.append("d.purchase_date IS NOT NULL")
+            years_where_parts.append("YEAR(d.purchase_date) IS NOT NULL")
+            
+            years_where_clause = "WHERE " + " AND ".join(years_where_parts)
+            
+            years_query = f"""
+                SELECT DISTINCT YEAR(d.purchase_date) as year 
+                FROM deals d
+                {years_where_clause}
+                ORDER BY year DESC
+            """
+            cursor.execute(years_query, years_params)
+            years_result = cursor.fetchall()
+            years = [row['year'] for row in years_result if row['year'] is not None]
+        except mysql.connector.Error as e:
+            if "Unknown column 'purchase_date'" in str(e):
+                # purchase_date column doesn't exist yet
+                years = []
+            else:
+                raise
         
         response_data = {
             'total': stats['total'] or 0,
@@ -3289,7 +3553,10 @@ def get_deals_stats(current_user):
         return jsonify(response_data)
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] Stats endpoint error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to fetch statistics', 'details': str(e)}), 500
     finally:
         if connection:
             connection.close()
@@ -3347,7 +3614,7 @@ def create_deal(current_user):
             data.get('village'),
             total_area,
             data.get('area_unit'),
-            current_user,
+            current_user.get('id') if isinstance(current_user, dict) else current_user,
             final_status,
             data.get('payment_mode'),
             data.get('profit_allocation')
@@ -3890,7 +4157,11 @@ def add_buyer_to_deal(current_user, deal_id):
 @app.route('/api/deals/<int:deal_id>/buyers/<int:buyer_id>', methods=['DELETE'])
 @token_required
 def delete_buyer_from_deal(current_user, deal_id, buyer_id):
-    """Delete a buyer from a deal"""
+    """Delete a buyer from a deal - Only admin users can delete buyers"""
+    # Check if user has admin role
+    if current_user.get('role') != 'admin':
+        return jsonify({'error': 'Only admin users can delete buyers'}), 403
+        
     try:
         connection = get_db_connection()
         if not connection:
@@ -4376,10 +4647,19 @@ def get_starred_owners(current_user):
 @app.route('/api/owners/<int:owner_id>', methods=['DELETE'])
 @token_required
 def delete_owner(current_user, owner_id):
-    """Delete an owner"""
+    """Delete an owner - Only admin users can delete owners"""
+    # Check if user has admin role
+    if current_user.get('role') != 'admin':
+        return jsonify({'error': 'Only admin users can delete owners'}), 403
+        
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
+        
+        # Check if owner exists
+        cursor.execute("SELECT id FROM owners WHERE id = %s", (owner_id,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Owner not found'}), 404
         
         cursor.execute("DELETE FROM owners WHERE id = %s", (owner_id,))
         connection.commit()
@@ -4868,7 +5148,11 @@ def update_investor(current_user, investor_id):
 @app.route('/api/investors/<int:investor_id>', methods=['DELETE'])
 @token_required
 def delete_investor(current_user, investor_id):
-    """Delete an investor"""
+    """Delete an investor - Only admin users can delete investors"""
+    # Check if user has admin role
+    if current_user.get('role') != 'admin':
+        return jsonify({'error': 'Only admin users can delete investors'}), 403
+        
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -7184,7 +7468,19 @@ def get_investor_direct(investor_id):
 
 # ============================================================================
 
+def initialize_database():
+    """Initialize database schemas on startup"""
+    try:
+        ensure_users_schema()
+        ensure_deals_schema()
+        ensure_payment_schema()
+    except Exception as e:
+        print(f"[WARNING] Database initialization failed: {e}")
+
 if __name__ == '__main__':
+    # Initialize database schemas
+    initialize_database()
+    
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() in ['true', '1', 'yes']
     host = os.getenv('FLASK_HOST', '0.0.0.0')
     port = int(os.getenv('FLASK_PORT', 5000))

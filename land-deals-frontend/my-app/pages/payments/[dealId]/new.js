@@ -636,7 +636,7 @@ export default function NewPayment() {
         }
 
         // Navigate to the new payment detail
-        router.push(newPaymentId ? `/payments/${dealId}/${newPaymentId}` : `/payments`)
+        router.push(newPaymentId ? `/payments/${dealId}/${newPaymentId}` : `/deals/${dealId}#payments`)
       }
     } catch (error) {
       console.error('Failed to create payment:', error)
@@ -710,8 +710,8 @@ export default function NewPayment() {
       
       toast.success(`Successfully created ${installmentCount} installment payments!`)
       
-      // Navigate back to payments list to show all created installments
-      router.push(`/payments`)
+      // Navigate back to deal details payments section to show all created installments
+      router.push(`/deals/${dealId}#payments`)
       
     } catch (error) {
       console.error('Error creating installment payments:', error)

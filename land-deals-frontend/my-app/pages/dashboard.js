@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import { getUser, logout, isAuthenticated } from '../lib/auth'
+import { hasPermission, PERMISSIONS } from '../lib/permissions'
 import { dealAPI } from '../lib/api'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const [tableLoading, setTableLoading] = useState(false)
   const [filterYear, setFilterYear] = useState('')
   const [statusFilter, setStatusFilter] = useState('') // 'all', 'open', 'closed', 'commission'
+  const [searchTerm, setSearchTerm] = useState('') // New search state
   
   // Statistics state (fetched separately for performance)
   const [totalDeals, setTotalDeals] = useState(0)
@@ -55,6 +57,9 @@ export default function Dashboard() {
       if (statusFilter && statusFilter !== 'all') {
         params.append('status', statusFilter)
       }
+      if (searchTerm.trim()) {
+        params.append('search', searchTerm.trim())
+      }
       
       console.log('Fetching with params:', params.toString())
       
@@ -77,7 +82,7 @@ export default function Dashboard() {
         
         console.log('Received deals:', paginatedDeals.length, 'pagination:', pagination)
         
-        // Update deals state with current page data
+        // Backend now handles role-based filtering, so we can use the deals directly
         setDeals(paginatedDeals || [])
         setTotalPages(pagination?.totalPages || 1)
         setTotalCount(pagination?.totalCount || 0)
@@ -100,7 +105,7 @@ export default function Dashboard() {
       setLoading(false)
       setTableLoading(false)
     }
-  }, [router, itemsPerPage, filterYear, statusFilter])
+  }, [router, itemsPerPage, filterYear, statusFilter, searchTerm])
 
   useEffect(() => {
     // Add a small delay to ensure page is fully mounted before checking auth
@@ -139,6 +144,22 @@ export default function Dashboard() {
     }
   }, [filterYear, statusFilter, user, currentPage, fetchDeals])
 
+  // Separate useEffect for search to avoid conflicts with filters
+  useEffect(() => {
+    if (user) {
+      const timeoutId = setTimeout(() => {
+        console.log('Search triggered for:', searchTerm)
+        if (currentPage === 1) {
+          fetchDeals(1, false)
+        } else {
+          setCurrentPage(1) // This will trigger the main fetchDeals via the currentPage useEffect
+        }
+      }, 300)
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [searchTerm, user, currentPage, fetchDeals])
+
   const handleLogout = () => {
     logout()
     toast.success('Logged out successfully')
@@ -173,7 +194,13 @@ export default function Dashboard() {
   }
 
   const handleDeleteDeal = async () => {
-    if (!selectedDeal) return
+    if (!selectedDeal || !user) return
+    
+    // Check if user has permission to delete deals
+    if (!hasPermission(user, PERMISSIONS.DEALS_DELETE)) {
+      toast.error('You do not have permission to delete deals')
+      return
+    }
     
     try {
       await dealAPI.delete(selectedDeal.id)
@@ -205,6 +232,7 @@ export default function Dashboard() {
     console.log('Resetting all filters')
     setFilterYear('')
     setStatusFilter('')
+    setSearchTerm('')
     setCurrentPage(1) // Reset to first page when clearing filters
   }
 
@@ -227,6 +255,47 @@ export default function Dashboard() {
               </div>
             </div>
               <div className="flex items-center space-x-3">
+              {/* Search Bar */}
+              <div className="flex-1 max-w-md">
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search by project name, survey no., location, deal ID, status, or date..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      const newSearchTerm = e.target.value;
+                      setSearchTerm(newSearchTerm);
+                      
+                      // Reset to page 1 when searching
+                      if (currentPage !== 1) {
+                        setCurrentPage(1);
+                      }
+                    }}
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => {
+                        setSearchTerm('');
+                        if (currentPage !== 1) {
+                          setCurrentPage(1);
+                        }
+                      }}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    >
+                      <svg className="h-4 w-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+              
               {/* Filter Section */}
               <div className="flex items-center space-x-2 bg-slate-50 px-4 py-2 rounded border border-slate-200">
                 <span className="text-sm font-medium text-slate-700">Filter:</span>
@@ -261,7 +330,7 @@ export default function Dashboard() {
                   <option value="commission">Commission</option>
                 </select>
                 
-                {(filterYear || statusFilter) && (
+                {(filterYear || statusFilter || searchTerm) && (
                   <button
                     onClick={resetFilters}
                     className="text-xs text-slate-600 hover:text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 hover:bg-slate-50"
@@ -276,11 +345,13 @@ export default function Dashboard() {
                   </span>
                 </Link>
               )}
-              <Link href="/deals/all">
-                <span className="flex items-center rounded bg-white px-6 py-3 text-sm font-medium text-slate-900 border border-slate-300 hover:bg-slate-50 cursor-pointer">
-                  View All Deals
-                </span>
-              </Link>
+              {(hasPermission(user, PERMISSIONS.ADMIN_ACCESS) || hasPermission(user, PERMISSIONS.SYSTEM_ADMIN)) && (
+                <Link href="/deals/all">
+                  <span className="flex items-center rounded bg-white px-6 py-3 text-sm font-medium text-slate-900 border border-slate-300 hover:bg-slate-50 cursor-pointer">
+                    View All Deals
+                  </span>
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -383,8 +454,12 @@ export default function Dashboard() {
                           <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Deal ID</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Close</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Delete</th>
+                          {hasPermission(user, PERMISSIONS.DEALS_EDIT) && (
+                            <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Close</th>
+                          )}
+                          {hasPermission(user, PERMISSIONS.DEALS_DELETE) && (
+                            <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Delete</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -447,7 +522,7 @@ export default function Dashboard() {
                               </div>
                             </td>
                             <td className="px-6 py-4 text-center">
-                              {deal.status === 'open' && (
+                              {hasPermission(user, PERMISSIONS.DEALS_EDIT) && deal.status === 'open' && (
                                 <button
                                   onClick={(e) => {
                                     e.preventDefault()
@@ -461,16 +536,18 @@ export default function Dashboard() {
                               )}
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  handleDeleteClick(deal)
-                                }}
-                                className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 font-medium"
-                              >
-                                Delete
-                              </button>
+                              {hasPermission(user, PERMISSIONS.DEALS_DELETE) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    handleDeleteClick(deal)
+                                  }}
+                                  className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 font-medium"
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}

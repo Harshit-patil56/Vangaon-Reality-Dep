@@ -19,6 +19,18 @@ export const PERMISSIONS = {
   USERS_EDIT: 'users:edit',
   USERS_DELETE: 'users:delete',
   
+  // Owner management permissions
+  OWNERS_VIEW: 'owners:view',
+  OWNERS_CREATE: 'owners:create',
+  OWNERS_EDIT: 'owners:edit',
+  OWNERS_DELETE: 'owners:delete',
+  
+  // Investor management permissions
+  INVESTORS_VIEW: 'investors:view',
+  INVESTORS_CREATE: 'investors:create',
+  INVESTORS_EDIT: 'investors:edit',
+  INVESTORS_DELETE: 'investors:delete',
+  
   // Payment permissions
   PAYMENTS_VIEW: 'payments:view',
   PAYMENTS_CREATE: 'payments:create',
@@ -54,6 +66,14 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.USERS_CREATE,
     PERMISSIONS.USERS_EDIT,
     PERMISSIONS.USERS_DELETE,
+    PERMISSIONS.OWNERS_VIEW,
+    PERMISSIONS.OWNERS_CREATE,
+    PERMISSIONS.OWNERS_EDIT,
+    PERMISSIONS.OWNERS_DELETE,
+    PERMISSIONS.INVESTORS_VIEW,
+    PERMISSIONS.INVESTORS_CREATE,
+    PERMISSIONS.INVESTORS_EDIT,
+    PERMISSIONS.INVESTORS_DELETE,
     PERMISSIONS.PAYMENTS_VIEW,
     PERMISSIONS.PAYMENTS_CREATE,
     PERMISSIONS.PAYMENTS_EDIT,
@@ -69,25 +89,40 @@ const ROLE_PERMISSIONS = {
   ],
   
   [ROLES.AUDITOR]: [
-    // Auditors can view, create, and edit but not delete
+    // Auditors have all admin permissions except system admin access
     PERMISSIONS.DEALS_VIEW,
     PERMISSIONS.DEALS_CREATE,
     PERMISSIONS.DEALS_EDIT,
+    PERMISSIONS.DEALS_DELETE,
+    PERMISSIONS.USERS_VIEW,
+    PERMISSIONS.USERS_CREATE,
+    PERMISSIONS.USERS_EDIT,
+    PERMISSIONS.USERS_DELETE,
+    PERMISSIONS.OWNERS_VIEW,
+    PERMISSIONS.OWNERS_CREATE,
+    PERMISSIONS.OWNERS_EDIT,
+    PERMISSIONS.OWNERS_DELETE,
+    PERMISSIONS.INVESTORS_VIEW,
+    PERMISSIONS.INVESTORS_CREATE,
+    PERMISSIONS.INVESTORS_EDIT,
+    PERMISSIONS.INVESTORS_DELETE,
     PERMISSIONS.PAYMENTS_VIEW,
     PERMISSIONS.PAYMENTS_CREATE,
     PERMISSIONS.PAYMENTS_EDIT,
+    PERMISSIONS.PAYMENTS_DELETE,
     PERMISSIONS.DOCUMENTS_VIEW,
     PERMISSIONS.DOCUMENTS_UPLOAD,
+    PERMISSIONS.DOCUMENTS_DELETE,
     PERMISSIONS.FINANCIALS_VIEW,
     PERMISSIONS.FINANCIALS_EDIT,
     PERMISSIONS.REPORTS_GENERATE,
     PERMISSIONS.ADMIN_ACCESS
+    // Note: SYSTEM_ADMIN permission is excluded - this hides admin panel access
   ],
   
   [ROLES.USER]: [
-    // Users can only view
-    PERMISSIONS.DEALS_VIEW,
-    PERMISSIONS.PAYMENTS_VIEW,
+    // Users can only view restricted deals - no payments access
+    PERMISSIONS.DEALS_VIEW, // This will be restricted based on investor_id
     PERMISSIONS.DOCUMENTS_VIEW,
     PERMISSIONS.FINANCIALS_VIEW
   ]
@@ -106,6 +141,43 @@ export function hasPermission(user, permission) {
   
   const userPermissions = ROLE_PERMISSIONS[user.role] || []
   return userPermissions.includes(permission)
+}
+
+/**
+ * Check if user has restricted access (Users role with investor_id restriction)
+ * @param {Object} user - User object with role and investor_id properties
+ * @returns {boolean} - True if user has restricted access
+ */
+export function hasRestrictedAccess(user) {
+  return user && user.role === ROLES.USER && user.investor_id
+}
+
+/**
+ * Check if user can access specific deal based on their role and restrictions
+ * @param {Object} user - User object with role and investor_id properties
+ * @param {Object} deal - Deal object with investors array
+ * @returns {boolean} - True if user can access the deal
+ */
+export function canAccessDeal(user, deal) {
+  if (!user || !deal) return false
+  
+  // Admin and Auditor can access all deals
+  if (user.role === ROLES.ADMIN || user.role === ROLES.AUDITOR) {
+    return true
+  }
+  
+  // Users with restricted access can only access deals where they are investors
+  if (hasRestrictedAccess(user)) {
+    const userInvestorId = user.investor_id
+    if (!userInvestorId) return false
+    
+    // Check if user's investor_id is in the deal's investors
+    return deal.investors && deal.investors.some(investor => 
+      investor.id === userInvestorId || investor.investor_id === userInvestorId
+    )
+  }
+  
+  return false
 }
 
 /**
@@ -220,8 +292,8 @@ export function getRoleName(role) {
 export function getRoleDescription(role) {
   const roleDescriptions = {
     [ROLES.ADMIN]: 'Full system access - can create, edit, and delete all content',
-    [ROLES.AUDITOR]: 'Can create and edit deals and payments, but cannot delete anything',
-    [ROLES.USER]: 'Read-only access - can view deals, payments, and reports'
+    [ROLES.AUDITOR]: 'Can view deals and edit payments, upload documents, but cannot create/delete deals or create/delete payments',
+    [ROLES.USER]: 'Restricted access - can only view deals where they are assigned as investors, and view related payments'
   }
   return roleDescriptions[role] || 'No description available'
 }
@@ -230,6 +302,8 @@ const permissionsExport = {
   ROLES,
   PERMISSIONS,
   hasPermission,
+  hasRestrictedAccess,
+  canAccessDeal,
   hasAnyPermission,
   hasAllPermissions,
   getPermissionsForRole,

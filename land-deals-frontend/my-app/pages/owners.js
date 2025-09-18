@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { getUser, logout, isAuthenticated } from '../lib/auth';
+import { hasPermission, PERMISSIONS } from '../lib/permissions';
 import Navbar from '../components/layout/Navbar';
 import { Plus, Edit, Trash2, Star, Eye, Loader2 } from 'lucide-react';
 import api, { ownersAPI } from '../lib/api';
@@ -187,6 +188,14 @@ export default function Owners() {
       }
       
       const userData = getUser();
+      
+      // Check if user has permission to view owners
+      if (!hasPermission(userData, PERMISSIONS.OWNERS_VIEW)) {
+        toast.error('Access denied: insufficient permissions');
+        router.push('/dashboard');
+        return;
+      }
+      
       setUser(userData);
       
       // Load initial data
