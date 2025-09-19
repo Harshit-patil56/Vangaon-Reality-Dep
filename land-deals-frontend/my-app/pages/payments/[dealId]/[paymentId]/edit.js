@@ -325,16 +325,9 @@ export default function EditPayment() {
         }
       }
 
-      // helper normalize legacy payment_type values -> backend enum
+      // Keep payment_type as-is since backend now supports legacy types
       const normalizePaymentType = (val) => {
-        if (!val) return 'land_purchase'
-        const map = {
-          'advance': 'land_purchase',
-          'partial': 'investment_sale',
-          'final': 'land_purchase',
-          'registration': 'documentation_legal'
-        }
-        return map[val] || val
+        return val || 'other'  // Default to 'other' if no value
       }
 
       setFormData({
@@ -546,11 +539,9 @@ export default function EditPayment() {
     }
     
     setIf('description', formData.description)
-    // normalize payment_type to backend enum
+    // Keep payment_type as-is since backend now supports legacy types
     const normalizePaymentType = (val) => {
-      if (!val) return 'land_purchase'
-      const map = { 'advance':'land_purchase', 'partial':'investment_sale', 'final':'land_purchase', 'registration':'documentation_legal' }
-      return map[val] || val
+      return val || 'other'  // Default to 'other' if no value
     }
     setIf('payment_type', normalizePaymentType(formData.payment_type))
     setIf('status', formData.status)
