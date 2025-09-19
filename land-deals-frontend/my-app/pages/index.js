@@ -1,19 +1,24 @@
 // pages/index.js - Root page with authentication-based routing
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { isAuthenticated } from '../lib/auth'
 
 export default function HomePage() {
   const router = useRouter()
+  const hasRedirected = useRef(false)
 
   useEffect(() => {
-    // Check authentication status and redirect accordingly
-    if (isAuthenticated()) {
-      // User is logged in, redirect to dashboard
-      router.replace('/dashboard')
-    } else {
-      // User is not logged in, redirect to login
-      router.replace('/login')
+    // Only redirect on initial load, not on refresh or navigation
+    if (!hasRedirected.current && router.asPath === '/') {
+      hasRedirected.current = true
+      
+      if (isAuthenticated()) {
+        // User is logged in, redirect to dashboard
+        router.replace('/dashboard')
+      } else {
+        // User is not logged in, redirect to login
+        router.replace('/login')
+      }
     }
   }, [router])
 
