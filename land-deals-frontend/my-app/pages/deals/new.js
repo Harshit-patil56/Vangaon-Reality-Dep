@@ -554,7 +554,7 @@ export default function NewDeal() {
                   
                   {/* Purchase Date Input */}
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Purchase Date</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Deal Date</label>
                     <input
                       type="date"
                       name="purchase_date"

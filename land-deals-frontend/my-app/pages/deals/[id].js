@@ -974,7 +974,7 @@ function ProjectDetailsSection({ deal, owners, investors, loading, payments = []
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 print-grid">
           <InfoItem label="Project Name" value={deal.project_name} />
           <InfoItem label="Survey Number" value={deal.survey_number} />
-          <InfoItem label="Purchase Date" value={deal.purchase_date ? new Date(deal.purchase_date).toLocaleDateString('en-GB') : 'Not specified'} />
+          <InfoItem label="Deal Date" value={deal.purchase_date ? new Date(deal.purchase_date).toLocaleDateString('en-GB') : 'Not specified'} />
           <InfoItem label="Taluka" value={deal.taluka} />
           <InfoItem label="Village" value={deal.village} />
           <InfoItem label="Total Area" value={`${parseFloat(deal.total_area)} ${deal.area_unit}`} />
@@ -1138,6 +1138,7 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
   useEffect(() => {
     if (owners && owners.length > 0) {
       const initialShares = {};
+      const initialAmounts = {};
       owners.forEach((owner, index) => {
         const ownerId = owner.id || index;
         // If only one owner, automatically set to 100%
@@ -1146,15 +1147,23 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
         } else {
           initialShares[ownerId] = owner.percentage_share || '';
         }
+        // Initialize manual amounts
+        initialAmounts[ownerId] = owner.investment_amount || '';
       });
       setOwnerShares(initialShares);
+      setOwnerAmounts(initialAmounts);
     }
   }, [owners]);
+
+  // State for manual amount inputs
+  const [ownerAmounts, setOwnerAmounts] = useState({});
+  const [investorAmounts, setInvestorAmounts] = useState({});
 
   // Initialize investor shares - sync with latest data from props
   useEffect(() => {
     if (investors && investors.length > 0) {
       const initialShares = {};
+      const initialAmounts = {};
       investors.forEach((investor, index) => {
         const investorId = investor.id || index;
         // If only one investor, automatically set to 100%
@@ -1171,74 +1180,137 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
             initialShares[investorId] = '';
           }
         }
+        // Initialize manual amounts
+        initialAmounts[investorId] = investor.investment_amount || '';
       });
       setInvestorShares(initialShares);
+      setInvestorAmounts(initialAmounts);
       console.log('Initialized investor shares in buying section:', initialShares);
       console.log('Investors data:', investors);
     }
   }, [investors]);
 
-  // Calculate investment amount for an owner based on their percentage
-  const calculateInvestmentAmount = (percentage) => {
-    // Return 0 for any invalid input to ensure clean default display
-    if (!percentage || percentage === '' || !purchaseAmount || purchaseAmount === '') return 0;
-    
-    const numericPercentage = parseFloat(percentage);
-    if (isNaN(numericPercentage) || numericPercentage < 0) return 0;
-    
-    // Clean the purchase amount - remove commas and any non-digit characters except decimal
-    let cleanPurchaseAmount = purchaseAmount.toString().replace(/[^\d.]/g, '');
-    const numericPurchaseAmount = parseFloat(cleanPurchaseAmount);
-    
-    if (isNaN(numericPurchaseAmount) || numericPurchaseAmount <= 0) return 0;
-    
-    const calculatedAmount = (numericPurchaseAmount * numericPercentage) / 100;
-    
-    // Return 0 for any invalid calculation result
-    return isNaN(calculatedAmount) || calculatedAmount < 0 ? 0 : calculatedAmount;
+  // Helper function to check if total exceeds purchase amount
+  const getTotalExceedsWarning = (amounts) => {
+    const totalAmount = Object.values(amounts).reduce((sum, amount) => {
+      return sum + (parseFloat(amount) || 0);
+    }, 0);
+    const numericPurchaseAmount = parseFloat(purchaseAmount?.toString().replace(/[^\d.]/g, '')) || 0;
+    return numericPurchaseAmount > 0 && totalAmount > numericPurchaseAmount;
   };
 
-  // Handle percentage change for owners
-  const handleOwnerPercentageChange = (ownerId, value) => {
-    // If only one owner, keep it at 100%
-    if (owners.length === 1) {
-      return;
-    }
+  // Handle manual amount change for owners
+  const handleOwnerAmountChange = (ownerId, value) => {
+    console.log('Owner amount change:', ownerId, value); // Debug log
     
-    // Allow empty input and whole numbers only (no decimal points)
-    if (value === '' || /^\d*$/.test(value)) {
-      // Check if the value exceeds 100
-      const numericValue = parseFloat(value);
-      if (value !== '' && numericValue > 100) {
-        return; // Don't update if value exceeds 100
-      }
-      
-      setOwnerShares(prev => ({
-        ...prev,
-        [ownerId]: value
-      }));
+    // Allow empty input and numbers
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setOwnerAmounts(prev => {
+        const newAmounts = {
+          ...prev,
+          [ownerId]: value
+        };
+        
+        // Calculate total of all amounts
+        const totalAmount = Object.values(newAmounts).reduce((sum, amount) => {
+          return sum + (parseFloat(amount) || 0);
+        }, 0);
+        
+        // Check if total exceeds purchase amount
+        const numericPurchaseAmount = parseFloat(purchaseAmount?.toString().replace(/[^\d.]/g, '')) || 0;
+        if (numericPurchaseAmount > 0 && totalAmount > numericPurchaseAmount) {
+          console.log('Owner rejected: Total exceeds purchase amount'); // Debug log
+          // Don't update if it would exceed purchase amount
+          return prev;
+        }
+        
+        // Auto-calculate percentages based on amounts
+        if (totalAmount > 0) {
+          const newPercentages = {};
+          Object.entries(newAmounts).forEach(([id, amount]) => {
+            const numericAmount = parseFloat(amount) || 0;
+            if (numericAmount > 0) {
+              newPercentages[id] = ((numericAmount / totalAmount) * 100).toFixed(2);
+            } else {
+              newPercentages[id] = '';
+            }
+          });
+          setOwnerShares(newPercentages);
+        } else {
+          // Reset all percentages if no amounts
+          const resetPercentages = {};
+          Object.keys(newAmounts).forEach(id => {
+            resetPercentages[id] = '';
+          });
+          setOwnerShares(resetPercentages);
+        }
+        
+        return newAmounts;
+      });
+    } else {
+      console.log('Owner rejected: Invalid input format:', value); // Debug log
     }
   };
 
-  // Handle percentage change for investors
-  const handleInvestorPercentageChange = (investorId, value) => {
-    // If only one investor, keep it at 100%
-    if (investors.length === 1) {
-      return;
-    }
+  // Handle manual amount change for investors
+  const handleInvestorAmountChange = (investorId, value) => {
+    console.log('Investor amount change:', investorId, value); // Debug log
     
-    // Allow empty input and whole numbers only (no decimal points)
-    if (value === '' || /^\d*$/.test(value)) {
-      // Check if the value exceeds 100
-      const numericValue = parseFloat(value);
-      if (value !== '' && numericValue > 100) {
-        return; // Don't update if value exceeds 100
-      }
-      
-      setInvestorShares(prev => ({
-        ...prev,
-        [investorId]: value
-      }));
+    // Allow empty input and numbers (including decimals)
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setInvestorAmounts(prev => {
+        console.log('Previous investor amounts:', prev); // Debug log
+        
+        const newAmounts = {
+          ...prev,
+          [investorId]: value
+        };
+        
+        console.log('New investor amounts:', newAmounts); // Debug log
+        
+        // Calculate total of all amounts
+        const totalAmount = Object.values(newAmounts).reduce((sum, amount) => {
+          return sum + (parseFloat(amount) || 0);
+        }, 0);
+        
+        console.log('Total investor amount:', totalAmount); // Debug log
+        
+        // Temporarily disable purchase amount validation to allow all input
+        // const numericPurchaseAmount = parseFloat(purchaseAmount?.toString().replace(/[^\d.]/g, '')) || 0;
+        // console.log('Purchase amount for validation:', numericPurchaseAmount); // Debug log
+        
+        // Only validate against purchase amount if it's set and greater than 0
+        // if (numericPurchaseAmount > 0 && totalAmount > numericPurchaseAmount) {
+        //   console.log('Rejected: Total exceeds purchase amount'); // Debug log
+        //   // Don't update if it would exceed purchase amount
+        //   return prev;
+        // }
+        
+        // Auto-calculate percentages based on amounts
+        if (totalAmount > 0) {
+          const newPercentages = {};
+          Object.entries(newAmounts).forEach(([id, amount]) => {
+            const numericAmount = parseFloat(amount) || 0;
+            if (numericAmount > 0) {
+              newPercentages[id] = ((numericAmount / totalAmount) * 100).toFixed(2);
+            } else {
+              newPercentages[id] = '';
+            }
+          });
+          setInvestorShares(newPercentages);
+        } else {
+          // Reset all percentages if no amounts
+          const resetPercentages = {};
+          Object.keys(newAmounts).forEach(id => {
+            resetPercentages[id] = '';
+          });
+          setInvestorShares(resetPercentages);
+        }
+        
+        return newAmounts;
+      });
+    } else {
+      console.log('Rejected: Invalid input format:', value); // Debug log
     }
   };
 
@@ -1248,12 +1320,12 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
       const ownerData = owners.map((owner, index) => {
         const ownerId = owner.id || index;
         const percentage = parseFloat(ownerShares[ownerId]) || 0;
-        const amount = calculateInvestmentAmount(ownerShares[ownerId]);
+        const manualAmount = parseFloat(ownerAmounts[ownerId]) || 0;
         
         return {
           id: owner.id,
           percentage_share: Math.round(percentage),
-          investment_amount: Math.round(amount)
+          investment_amount: Math.round(manualAmount)
         };
       });
 
@@ -1331,12 +1403,12 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
       const investorData = investors.map((investor, index) => {
         const investorId = investor.id || index;
         const percentage = parseFloat(investorShares[investorId]) || 0;
-        const amount = calculateInvestmentAmount(investorShares[investorId]);
+        const manualAmount = parseFloat(investorAmounts[investorId]) || 0;
         
         return {
           id: investor.id,
           percentage_share: Math.round(percentage),
-          investment_amount: Math.round(amount)
+          investment_amount: Math.round(manualAmount)
         };
       });
 
@@ -1614,7 +1686,7 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
               {owners.map((owner, index) => {
                 const ownerId = owner.id || index;
                 const currentPercentage = ownerShares[ownerId] || '';
-                const calculatedAmount = calculateInvestmentAmount(currentPercentage);
+                const currentAmount = ownerAmounts[ownerId] || '';
                 
                 return (
                   <div key={index} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
@@ -1634,31 +1706,30 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {/* Percentage Input */}
+                      {/* Percentage Input - Read-only (Auto-calculated) */}
                       <div className="flex items-center gap-1">
                         <input
                           type="text"
                           placeholder="0"
                           value={currentPercentage}
-                          onChange={(e) => handleOwnerPercentageChange(ownerId, e.target.value)}
-                          className={`w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center ${
-                            owners.length === 1 ? 'bg-gray-100 cursor-not-allowed' : ''
-                          }`}
-                          max="100"
-                          disabled={owners.length === 1}
-                          title={owners.length === 1 ? 'Single owner automatically gets 100%' : 'Enter percentage share'}
+                          readOnly
+                          className="w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center bg-gray-50 cursor-not-allowed"
+                          title="Auto-calculated based on amount"
                         />
                         <span className="text-xs text-gray-500">%</span>
                       </div>
                       
-                      {/* Calculated Amount Display */}
-                      <div className="text-right min-w-[100px]">
-                        <div className="text-sm font-medium text-black">
-                          {calculatedAmount > 0 ? 
-                            `₹${new Intl.NumberFormat('en-IN').format(Math.round(calculatedAmount))}` 
-                            : '₹0'
-                          }
-                        </div>
+                      {/* Manual Amount Input */}
+                      <div className="text-right min-w-[120px]">
+                        <input
+                          type="text"
+                          placeholder="0"
+                          value={currentAmount}
+                          onChange={(e) => handleOwnerAmountChange(ownerId, e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                          style={{ appearance: 'textfield' }}
+                          title="Enter amount manually"
+                        />
                       </div>
                       
                       {/* Delete Button */}
@@ -1688,15 +1759,22 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
                           return sum + (parseFloat(percentage) || 0);
                         }, 0))}%
                       </span>
-                      <span className="font-medium text-black min-w-[100px] text-right">
+                      <span className={`font-medium min-w-[120px] text-right ${
+                        getTotalExceedsWarning(ownerAmounts) ? 'text-red-600' : 'text-black'
+                      }`}>
                         ₹{new Intl.NumberFormat('en-IN').format(
-                          Math.round(Object.values(ownerShares).reduce((sum, percentage) => {
-                            return sum + calculateInvestmentAmount(percentage);
+                          Math.round(Object.values(ownerAmounts).reduce((sum, amount) => {
+                            return sum + (parseFloat(amount) || 0);
                           }, 0))
                         )}
                       </span>
                     </div>
                   </div>
+                  {getTotalExceedsWarning(ownerAmounts) && (
+                    <div className="mt-2 text-xs text-red-600">
+                      ⚠️ Total exceeds purchase amount
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -1743,7 +1821,7 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
               {investors.map((investor, index) => {
                 const investorId = investor.id || index;
                 const currentPercentage = investorShares[investorId] || '';
-                const calculatedAmount = calculateInvestmentAmount(currentPercentage);
+                const currentAmount = investorAmounts[investorId] || '';
                 
                 return (
                   <div key={index} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
@@ -1763,34 +1841,30 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {/* Percentage Input */}
+                      {/* Percentage Input - Read-only (Auto-calculated) */}
                       <div className="flex items-center gap-1">
                         <input
                           type="text"
                           placeholder="0"
                           value={currentPercentage}
-                          onChange={(e) => handleInvestorPercentageChange(investorId, e.target.value)}
-                          className={`w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center ${
-                            investors.length === 1 ? 'bg-gray-100 cursor-not-allowed' : ''
-                          }`}
-                          max="100"
-                          disabled={investors.length === 1}
-                          title={investors.length === 1 ? 'Single investor automatically gets 100%' : 'Enter percentage share'}
+                          readOnly
+                          className="w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center bg-gray-50 cursor-not-allowed"
+                          title="Auto-calculated based on amount"
                         />
                         <span className="text-xs text-gray-500">%</span>
                       </div>
                       
-                      {/* Calculated Amount Display */}
-                      <div className="text-right min-w-[100px]">
-                        <div className="text-sm font-medium text-black">
-                          {calculatedAmount > 0 ? 
-                            `₹${new Intl.NumberFormat('en-IN').format(Math.round(calculatedAmount))}` 
-                            : '₹0'
-                          }
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {currentPercentage && currentPercentage !== '' ? 'Calculated' : 'Not saved'}
-                        </div>
+                      {/* Manual Amount Input */}
+                      <div className="text-right min-w-[120px]">
+                        <input
+                          type="text"
+                          placeholder="0"
+                          value={currentAmount}
+                          onChange={(e) => handleInvestorAmountChange(investorId, e.target.value)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                          style={{ appearance: 'textfield' }}
+                          title="Enter amount manually"
+                        />
                       </div>
                       
                       {/* Delete Button */}
@@ -1820,15 +1894,22 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
                           return sum + (parseFloat(percentage) || 0);
                         }, 0))}%
                       </span>
-                      <span className="font-medium text-black min-w-[100px] text-right">
+                      <span className={`font-medium min-w-[120px] text-right ${
+                        getTotalExceedsWarning(investorAmounts) ? 'text-red-600' : 'text-black'
+                      }`}>
                         ₹{new Intl.NumberFormat('en-IN').format(
-                          Math.round(Object.values(investorShares).reduce((sum, percentage) => {
-                            return sum + calculateInvestmentAmount(percentage);
+                          Math.round(Object.values(investorAmounts).reduce((sum, amount) => {
+                            return sum + (parseFloat(amount) || 0);
                           }, 0))
                         )}
                       </span>
                     </div>
                   </div>
+                  {getTotalExceedsWarning(investorAmounts) && (
+                    <div className="mt-2 text-xs text-red-600">
+                      ⚠️ Total exceeds purchase amount
+                    </div>
+                  )}
                 </div>
               )}
               
