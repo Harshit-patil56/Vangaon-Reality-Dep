@@ -287,8 +287,8 @@ export default function NewPayment() {
             return // Exit early since we've already updated formData
           }
         }
-      } else if (!value || value === '' || value === '__other__' || formData.payment_type !== 'land_purchase') {
-        // Clear the amount field when no selection, non-investor selection, or payment type is not land_purchase
+      } else if (!value || value === '' || value === '__other__' || !['land_purchase', 'advance', 'final', 'partial'].includes(formData.payment_type)) {
+        // Clear the amount field when no selection, non-investor selection, or payment type is not land purchase related
         setFormData(prev => ({ 
           ...prev, 
           [name]: newValue,

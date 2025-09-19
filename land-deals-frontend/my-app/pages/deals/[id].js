@@ -1026,7 +1026,7 @@ function ProjectDetailsSection({ deal, owners, investors, loading, payments = []
                         );
                         
                         return miscOwner?.total_miscellaneous > 0 
-                          ? `${formatAmount(miscOwner.total_miscellaneous)} (${miscOwner.payment_count} payments)`
+                          ? formatAmount(miscOwner.total_miscellaneous)
                           : 'No miscellaneous payments';
                       })()}
                     />
@@ -1078,7 +1078,7 @@ function ProjectDetailsSection({ deal, owners, investors, loading, payments = []
                         );
                         
                         return miscInvestor?.total_miscellaneous > 0 
-                          ? `${formatAmount(miscInvestor.total_miscellaneous)} (${miscInvestor.payment_count} payments)`
+                          ? formatAmount(miscInvestor.total_miscellaneous)
                           : 'No miscellaneous payments';
                       })()}
                     />
@@ -2833,7 +2833,12 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
       'investment_sale': 'Investment Sale',
       'documentation_legal': 'Documentation',
       'maintenance_taxes': 'Maintenance',
-      'other': 'Other'
+      'other': 'Other',
+      // Legacy types - show as separate types in display
+      'advance': 'Advance',
+      'partial': 'Partial',
+      'final': 'Final',
+      'registration': 'Registration'
     };
     
     return typeLabels[type] || type?.charAt(0).toUpperCase() + type?.slice(1) || 'Unknown';
@@ -2845,7 +2850,12 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
       'investment_sale': 'bg-purple-100 text-purple-800',
       'documentation_legal': 'bg-orange-100 text-orange-800',
       'maintenance_taxes': 'bg-gray-100 text-gray-800',
-      'other': 'bg-gray-100 text-gray-800'
+      'other': 'bg-gray-100 text-gray-800',
+      // Legacy types - show with distinct colors
+      'advance': 'bg-green-100 text-green-800',
+      'partial': 'bg-yellow-100 text-yellow-800',
+      'final': 'bg-indigo-100 text-indigo-800',
+      'registration': 'bg-pink-100 text-pink-800'
     };
     
     return (
@@ -3927,10 +3937,10 @@ function ProfitLossSection({ deal, payments, investors }) {
     
     console.log(`\n=== Debug: Calculating LAND PURCHASE for investor: ${investorName} (ID: ${investorId}) ===`);
     
-    // Filter for completed land_purchase payments only
+    // Filter for completed land_purchase and related payments (advance, final, partial)
     const landPurchasePayments = payments.filter(payment => {
       const isCompleted = payment.status === 'completed';
-      const isLandPurchase = payment.payment_type === 'land_purchase';
+      const isLandPurchase = ['land_purchase', 'advance', 'final', 'partial'].includes(payment.payment_type);
       
       if (!isCompleted || !isLandPurchase) {
         return false;
@@ -3985,9 +3995,10 @@ function ProfitLossSection({ deal, payments, investors }) {
     console.log(`\n=== Debug: Calculating MISCELLANEOUS for investor: ${investorName} (ID: ${investorId}) ===`);
     
     // Filter for completed non-land_purchase payments only
+    // Exclude advance, final, partial as they are part of land purchase
     const miscellaneousPayments = payments.filter(payment => {
       const isCompleted = payment.status === 'completed';
-      const isMiscellaneous = payment.payment_type !== 'land_purchase';
+      const isMiscellaneous = !['land_purchase', 'advance', 'final', 'partial'].includes(payment.payment_type);
       
       if (!isCompleted || !isMiscellaneous) {
         return false;
@@ -4030,13 +4041,14 @@ function ProfitLossSection({ deal, payments, investors }) {
   };
 
   // Calculate total miscellaneous expenses for all completed payments
+  // Exclude advance, final, partial as they are part of land purchase
   const calculateTotalMiscellaneous = () => {
     if (!payments) return 0;
     
     return payments
       .filter(payment => 
         payment.status === 'completed' && 
-        payment.payment_type !== 'land_purchase'
+        !['land_purchase', 'advance', 'final', 'partial'].includes(payment.payment_type)
       )
       .reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
   };

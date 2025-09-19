@@ -945,9 +945,9 @@ def create_payment(current_user, deal_id):
         except (ValueError, TypeError):
             return jsonify({'error': 'Invalid installment field values'}), 400
     
-    # payment_type: support enhanced types including 'maintenance_taxes'
+    # payment_type: support enhanced types including 'maintenance_taxes' and legacy types
     payment_type = data.get('payment_type', 'other')
-    allowed_payment_types = {'land_purchase', 'investment_sale', 'documentation_legal', 'maintenance_taxes', 'other'}
+    allowed_payment_types = {'land_purchase', 'investment_sale', 'documentation_legal', 'maintenance_taxes', 'other', 'advance', 'partial', 'final', 'registration'}
     if payment_type not in allowed_payment_types:
         payment_type = 'other'
         
@@ -1781,6 +1781,7 @@ def get_miscellaneous_summary(current_user, deal_id):
             
             # Get miscellaneous payments made by this investor
             # Include multiple matching strategies for robustness
+            # Exclude advance, final, partial as they are part of land purchase
             cursor.execute("""
                 SELECT 
                     p.id,
@@ -1794,7 +1795,7 @@ def get_miscellaneous_summary(current_user, deal_id):
                 FROM payments p
                 WHERE p.deal_id = %s 
                 AND p.status = 'completed'
-                AND p.payment_type != 'land_purchase'
+                AND p.payment_type NOT IN ('land_purchase', 'advance', 'final', 'partial')
                 AND (
                     p.paid_by = %s 
                     OR p.paid_by = %s 
@@ -1835,6 +1836,7 @@ def get_miscellaneous_summary(current_user, deal_id):
             owner_name = owner['name']
             
             # Get miscellaneous payments made by this owner
+            # Exclude advance, final, partial as they are part of land purchase
             cursor.execute("""
                 SELECT 
                     p.id,
@@ -1848,7 +1850,7 @@ def get_miscellaneous_summary(current_user, deal_id):
                 FROM payments p
                 WHERE p.deal_id = %s 
                 AND p.status = 'completed'
-                AND p.payment_type != 'land_purchase'
+                AND p.payment_type NOT IN ('land_purchase', 'advance', 'final', 'partial')
                 AND (
                     p.paid_by = %s 
                     OR p.paid_by = %s 
