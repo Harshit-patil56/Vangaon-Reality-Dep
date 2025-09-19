@@ -132,7 +132,7 @@ echo "🌐 Setting up Nginx..."
 sudo tee /etc/nginx/sites-available/land-deals > /dev/null <<EOF
 server {
     listen 80;
-    server_name _;
+    server_name vangaonreality.dpdns.org www.vangaonreality.dpdns.org;
 
     # Frontend
     location / {
