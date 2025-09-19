@@ -4,13 +4,6 @@ import { getToken } from './auth'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
-// Simple cache for performance
-const cache = new Map()
-const pendingRequests = new Map() // Prevent duplicate requests
-const CACHE_DURATION = 2 * 60 * 1000 // 2 minutes for faster development
-
-const getCacheKey = (url, config) => `${url}_${JSON.stringify(config?.params || {})}`
-
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   timeout: 30000, // 30 second timeout
@@ -30,17 +23,9 @@ api.interceptors.request.use((config) => {
   return Promise.reject(error)
 })
 
-// Response interceptor for better error handling and caching
+// Response interceptor for error handling
 api.interceptors.response.use(
   (response) => {
-    // Cache GET requests for performance
-    if (response.config.method === 'get') {
-      const cacheKey = getCacheKey(response.config.url, response.config)
-      cache.set(cacheKey, {
-        data: response,
-        timestamp: Date.now()
-      })
-    }
     return response
   },
   (error) => {
@@ -51,72 +36,15 @@ api.interceptors.response.use(
   }
 )
 
-// Cached request function with deduplication
-const cachedRequest = async (requestFn, cacheKey) => {
-  // Check cache first
-  const cached = cache.get(cacheKey)
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    console.log('Cache hit:', cacheKey)
-    return cached.data
-  }
-  
-  // Check if request is already pending
-  if (pendingRequests.has(cacheKey)) {
-    console.log('Request deduplication:', cacheKey)
-    return await pendingRequests.get(cacheKey)
-  }
-  
-  // Make new request
-  const requestPromise = requestFn()
-  pendingRequests.set(cacheKey, requestPromise)
-  
-  try {
-    const response = await requestPromise
-    // Cache the response
-    cache.set(cacheKey, {
-      data: response,
-      timestamp: Date.now()
-    })
-    return response
-  } finally {
-    pendingRequests.delete(cacheKey)
-  }
-}
 
-// Cache management functions
-const clearCache = (keyPattern) => {
-  if (keyPattern) {
-    // Clear specific cache keys matching pattern
-    for (const key of cache.keys()) {
-      if (key.includes(keyPattern)) {
-        cache.delete(key)
-      }
-    }
-  } else {
-    // Clear all cache
-    cache.clear()
-  }
-}
 
 export const dealAPI = {
-  getAll: () => {
-    const cacheKey = 'deals_all'
-    return cachedRequest(() => api.get('/deals'), cacheKey)
-  },
+  getAll: () => api.get('/deals'),
   // New paginated endpoint for chunked loading
-  getPaginated: (queryParams) => {
-    const cacheKey = `deals_paginated_${queryParams}`
-    return cachedRequest(() => api.get(`/deals/paginated?${queryParams}`), cacheKey)
-  },
+  getPaginated: (queryParams) => api.get(`/deals/paginated?${queryParams}`),
   // New statistics endpoint for dashboard
-  getStats: () => {
-    const cacheKey = 'deals_stats'
-    return cachedRequest(() => api.get('/deals/stats'), cacheKey)
-  },
-  getById: (id) => {
-    const cacheKey = `deals_${id}`
-    return cachedRequest(() => api.get(`/deals/${id}`), cacheKey)
-  },
+  getStats: () => api.get('/deals/stats'),
+  getById: (id) => api.get(`/deals/${id}`),
   create: (data) => api.post('/deals', data),
   update: (id, data) => api.put(`/deals/${id}`, data),
   updateStatus: (id, status) => api.put(`/deals/${id}/status`, { status }),
@@ -166,18 +94,8 @@ export const dealAPI = {
   },
   
   // Buyer Management
-  addBuyer: async (dealId, buyerData) => {
-    const response = await api.post(`/deals/${dealId}/buyers`, buyerData)
-    // Clear cache for this deal to ensure fresh data is fetched
-    clearCache(`deals_${dealId}`)
-    return response
-  },
-  deleteBuyer: async (dealId, buyerId) => {
-    const response = await api.delete(`/deals/${dealId}/buyers/${buyerId}`)
-    // Clear cache for this deal to ensure fresh data is fetched
-    clearCache(`deals_${dealId}`)
-    return response
-  },
+  addBuyer: (dealId, buyerData) => api.post(`/deals/${dealId}/buyers`, buyerData),
+  deleteBuyer: (dealId, buyerId) => api.delete(`/deals/${dealId}/buyers/${buyerId}`),
   
   // Audit Logs
   getLogs: (dealId) => api.get(`/deals/${dealId}/logs`),
