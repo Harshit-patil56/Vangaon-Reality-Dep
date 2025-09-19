@@ -4707,6 +4707,21 @@ def upload_owner_document(current_user, owner_id):
         
         # Save to database - handle table not existing
         try:
+            # Extract user ID from current_user dict - handle various formats
+            if isinstance(current_user, dict):
+                user_id = current_user.get('id') or current_user.get('user_id')
+            elif hasattr(current_user, 'id'):
+                user_id = current_user.id
+            else:
+                user_id = current_user
+            
+            # Ensure user_id is an integer
+            if user_id is not None:
+                try:
+                    user_id = int(user_id)
+                except (ValueError, TypeError):
+                    user_id = None
+            
             cursor = connection.cursor()
             cursor.execute("""
                 INSERT INTO owner_documents (owner_id, document_type, document_name, 
@@ -4718,7 +4733,7 @@ def upload_owner_document(current_user, owner_id):
                 filename,
                 os.path.relpath(filepath, app.config['UPLOAD_FOLDER']),
                 os.path.getsize(filepath),
-                current_user
+                user_id
             ))
             connection.commit()
         except mysql.connector.Error as e:
@@ -5271,6 +5286,21 @@ def upload_investor_document(current_user, investor_id):
         
         # Save to database - handle table not existing
         try:
+            # Extract user ID from current_user dict - handle various formats
+            if isinstance(current_user, dict):
+                user_id = current_user.get('id') or current_user.get('user_id')
+            elif hasattr(current_user, 'id'):
+                user_id = current_user.id
+            else:
+                user_id = current_user
+            
+            # Ensure user_id is an integer
+            if user_id is not None:
+                try:
+                    user_id = int(user_id)
+                except (ValueError, TypeError):
+                    user_id = None
+            
             cursor = connection.cursor()
             cursor.execute("""
                 INSERT INTO investor_documents (investor_id, document_type, document_name, 
@@ -5282,7 +5312,7 @@ def upload_investor_document(current_user, investor_id):
                 filename,
                 os.path.relpath(filepath, app.config['UPLOAD_FOLDER']),
                 os.path.getsize(filepath),
-                current_user
+                user_id
             ))
             connection.commit()
         except mysql.connector.Error as e:
@@ -5401,6 +5431,22 @@ def upload_file(current_user):
         file.save(filepath)
 
         # Save to database
+        # Extract user ID from current_user dict - handle various formats
+        if isinstance(current_user, dict):
+            user_id = current_user.get('id') or current_user.get('user_id')
+        elif hasattr(current_user, 'id'):
+            user_id = current_user.id
+        else:
+            user_id = current_user
+        
+        # Ensure user_id is an integer
+        if user_id is not None:
+            try:
+                user_id = int(user_id)
+            except (ValueError, TypeError):
+                print(f"Warning: Could not convert user_id to int: {user_id}")
+                user_id = None
+        
         cursor = connection.cursor()
         cursor.execute("""
             INSERT INTO documents (deal_id, document_type, document_name, 
@@ -5412,7 +5458,7 @@ def upload_file(current_user):
             filename,
             os.path.relpath(filepath, app.config['UPLOAD_FOLDER']),
             os.path.getsize(filepath),
-            current_user
+            user_id
         ))
         
         connection.commit()
@@ -5963,9 +6009,23 @@ def upload_land_document(current_user, deal_id):
         # Save to database with structured path
         print("=== Saving to database ===")
         try:
-            # Extract user ID from current_user dict
-            user_id = current_user.get('id') if isinstance(current_user, dict) else current_user
-            print(f"Using user_id: {user_id}")
+            # Extract user ID from current_user dict - handle various formats
+            if isinstance(current_user, dict):
+                user_id = current_user.get('id') or current_user.get('user_id')
+            elif hasattr(current_user, 'id'):
+                user_id = current_user.id
+            else:
+                user_id = current_user
+            
+            # Ensure user_id is an integer
+            if user_id is not None:
+                try:
+                    user_id = int(user_id)
+                except (ValueError, TypeError):
+                    print(f"Warning: Could not convert user_id to int: {user_id}")
+                    user_id = None
+            
+            print(f"Using user_id: {user_id} (type: {type(user_id)})")
             
             cursor.execute("""
                 INSERT INTO documents (deal_id, document_type, document_name, file_path, file_size, uploaded_by)
@@ -6054,6 +6114,22 @@ def upload_owner_document_structured(current_user, deal_id, owner_id):
         
         # Save to database with structured path and owner reference
         try:
+            # Extract user ID from current_user dict - handle various formats
+            if isinstance(current_user, dict):
+                user_id = current_user.get('id') or current_user.get('user_id')
+            elif hasattr(current_user, 'id'):
+                user_id = current_user.id
+            else:
+                user_id = current_user
+            
+            # Ensure user_id is an integer
+            if user_id is not None:
+                try:
+                    user_id = int(user_id)
+                except (ValueError, TypeError):
+                    print(f"Warning: Could not convert user_id to int: {user_id}")
+                    user_id = None
+            
             cursor.execute("""
                 INSERT INTO documents (deal_id, document_type, document_name, file_path, file_size, uploaded_by, owner_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -6063,7 +6139,7 @@ def upload_owner_document_structured(current_user, deal_id, owner_id):
                 result['filename'],
                 result['web_path'],
                 result['file_size'],
-                current_user,
+                user_id,
                 owner_id
             ))
             connection.commit()
@@ -6140,6 +6216,22 @@ def upload_investor_document_structured(current_user, deal_id, investor_id):
         
         # Save to database with structured path and investor reference
         try:
+            # Extract user ID from current_user dict - handle various formats
+            if isinstance(current_user, dict):
+                user_id = current_user.get('id') or current_user.get('user_id')
+            elif hasattr(current_user, 'id'):
+                user_id = current_user.id
+            else:
+                user_id = current_user
+            
+            # Ensure user_id is an integer
+            if user_id is not None:
+                try:
+                    user_id = int(user_id)
+                except (ValueError, TypeError):
+                    print(f"Warning: Could not convert user_id to int: {user_id}")
+                    user_id = None
+            
             cursor.execute("""
                 INSERT INTO documents (deal_id, document_type, document_name, file_path, file_size, uploaded_by, investor_id)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -6149,7 +6241,7 @@ def upload_investor_document_structured(current_user, deal_id, investor_id):
                 result['filename'],
                 result['web_path'],
                 result['file_size'],
-                current_user,
+                user_id,
                 investor_id
             ))
             connection.commit()
