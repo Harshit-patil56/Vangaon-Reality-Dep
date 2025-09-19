@@ -1826,6 +1826,7 @@ def get_miscellaneous_summary(current_user, deal_id):
                 'investor_id': investor_id,
                 'investor_name': investor_name,
                 'total_miscellaneous': total_miscellaneous,
+                'payment_count': len(misc_payments),
                 'miscellaneous_payments': miscellaneous_payments
             })
         
@@ -1881,6 +1882,7 @@ def get_miscellaneous_summary(current_user, deal_id):
                 'owner_id': owner_id,
                 'owner_name': owner_name,
                 'total_miscellaneous': total_miscellaneous,
+                'payment_count': len(misc_payments),
                 'miscellaneous_payments': miscellaneous_payments
             })
         
