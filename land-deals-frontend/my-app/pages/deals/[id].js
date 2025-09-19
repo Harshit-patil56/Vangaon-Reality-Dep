@@ -1301,8 +1301,8 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
 
       if (response.ok) {
         alert('Owner shares saved successfully!');
-        // Refresh the deal data to show updated values
-        window.location.reload();
+        // Refresh the deal data to show updated values using router.reload() instead of window.location.reload()
+        router.reload();
         return;
       } else {
         if (response.status === 401) {
@@ -1384,8 +1384,8 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
 
       if (response.ok) {
         alert('Investor shares saved successfully!');
-        // Refresh the deal data to show updated values
-        window.location.reload();
+        // Refresh the deal data to show updated values using router.reload() instead of window.location.reload()
+        router.reload();
         return;
       } else {
         if (response.status === 401) {
@@ -1441,8 +1441,8 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
 
       if (response.ok) {
         alert('Owner deleted successfully!');
-        // Refresh the deal data to show updated values
-        window.location.reload();
+        // Refresh the deal data to show updated values using router.reload() instead of window.location.reload()
+        router.reload();
       } else {
         const responseData = await response.json().catch(() => ({}));
         throw new Error(`HTTP ${response.status}: ${responseData.error || responseData.message || 'Unknown error'}`);
@@ -1486,8 +1486,8 @@ function LandDocumentsSection({ documents, generalDocuments, purchaseAmount = ''
 
       if (response.ok) {
         alert('Investor deleted successfully!');
-        // Refresh the deal data to show updated values
-        window.location.reload();
+        // Refresh the deal data to show updated values using router.reload() instead of window.location.reload()
+        router.reload();
       } else {
         const responseData = await response.json().catch(() => ({}));
         throw new Error(`HTTP ${response.status}: ${responseData.error || responseData.message || 'Unknown error'}`);
@@ -3531,6 +3531,7 @@ function PaymentsSection({ payments, loading, dealId, deal, onPaymentUpdate, inv
 
 // Selling Section Component
 function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAmountLoading = false, onUpdate }) {
+  const router = useRouter();
   const [isEditingSoldPrice, setIsEditingSoldPrice] = useState(false);
   const [localSoldPrice, setLocalSoldPrice] = useState(soldPrice);
   const [showAddBuyer, setShowAddBuyer] = useState(false);
@@ -3579,8 +3580,8 @@ function SellingSection({ deal, soldPrice = '', onSellingAmountChange, sellingAm
       // creates a race condition with server data fetch.
       // Parent function handles success/error toast messages
       
-      // Reload the page to ensure UI shows updated data
-      window.location.reload();
+      // Reload the page to ensure UI shows updated data using router.reload() instead of window.location.reload()
+      router.reload();
       
     } catch (error) {
       console.error('Failed to save selling amount:', error);
